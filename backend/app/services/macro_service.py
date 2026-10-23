@@ -108,6 +108,7 @@ class MacroDataError(RuntimeError):
 
 _cache_lock = Lock()
 _series_cache: dict[str, tuple[float, list[tuple[str, float]], str]] = {}
+_series_locks: dict[str, Lock] = {}
 
 
 def _parse_fred_csv(csv_text: str, series_id: str) -> list[tuple[str, float]]:
@@ -149,31 +150,47 @@ def _parse_fed_funds_csv(csv_text: str) -> dict[str, str | float]:
 
 
 def _fetch_fred_series(series_id: str) -> tuple[list[tuple[str, float]], str]:
-    """Fetch a series, using a short in-process cache to limit repeat requests."""
+    """Fetch a series with TTL caching and single-flight requests per series."""
     now = time.monotonic()
     with _cache_lock:
         cached = _series_cache.get(series_id)
         if cached and now - cached[0] < CACHE_TTL_SECONDS:
             return list(cached[1]), cached[2]
+        series_lock = _series_locks.setdefault(series_id, Lock())
 
-    request = Request(
-        FRED_GRAPH_URL.format(series_id=series_id),
-        headers={"User-Agent": "Arthvest/0.1 (macro research dashboard)"},
-    )
-    try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            status = getattr(response, "status", 200)
-            if status != 200:
-                raise MacroDataError(f"FRED returned HTTP status {status}")
-            csv_text = response.read().decode("utf-8-sig")
-    except (URLError, TimeoutError, OSError, UnicodeDecodeError) as exc:
-        raise MacroDataError(f"Unable to retrieve {series_id} data from FRED") from exc
+    # Different series can load in parallel; callers for the same series share
+    # one upstream request instead of racing to fetch duplicate CSV payloads.
+    with series_lock:
+        now = time.monotonic()
+        with _cache_lock:
+            cached = _series_cache.get(series_id)
+            if cached and now - cached[0] < CACHE_TTL_SECONDS:
+                return list(cached[1]), cached[2]
 
-    observations = _parse_fred_csv(csv_text, series_id)
-    retrieved_at = datetime.now(timezone.utc).isoformat()
-    with _cache_lock:
-        _series_cache[series_id] = (time.monotonic(), observations, retrieved_at)
-    return list(observations), retrieved_at
+        request = Request(
+            FRED_GRAPH_URL.format(series_id=series_id),
+            headers={"User-Agent": "Arthvest/0.1 (macro research dashboard)"},
+        )
+        try:
+            with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+                status = getattr(response, "status", 200)
+                if status != 200:
+                    raise MacroDataError(f"FRED returned HTTP status {status}")
+                csv_text = response.read().decode("utf-8-sig")
+        except (URLError, TimeoutError, OSError, UnicodeDecodeError) as exc:
+            raise MacroDataError(
+                f"Unable to retrieve {series_id} data from FRED"
+            ) from exc
+
+        observations = _parse_fred_csv(csv_text, series_id)
+        retrieved_at = datetime.now(timezone.utc).isoformat()
+        with _cache_lock:
+            _series_cache[series_id] = (
+                time.monotonic(),
+                observations,
+                retrieved_at,
+            )
+        return list(observations), retrieved_at
 
 
 def _observation_period_end(
