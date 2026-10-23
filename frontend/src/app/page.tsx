@@ -581,10 +581,11 @@ export default function Home() {
 
           {macroQuality ? (
             <>
-              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                 {[
                   { label: "Coverage", value: macroQuality.coverage_percent.toFixed(0) + "%" },
                   { label: "Fresh", value: String(macroQuality.fresh_count) },
+                  { label: "In progress", value: String(macroQuality.in_progress_count) },
                   { label: "Stale", value: String(macroQuality.stale_count) },
                   { label: "Unavailable", value: String(macroQuality.unavailable_count) },
                 ].map((metric) => (
@@ -690,7 +691,7 @@ export default function Home() {
                             {formatObservationPeriod(item.data.observation_date, item.data.frequency)}
                           </div>
                           <div className="mt-1 text-[10px] text-muted">
-                            {item.data.observation_age_days} calendar days since observation
+                            {item.data.observation_age_days} days after represented period end
                           </div>
                         </div>
                         {item.data.calculation ? (
