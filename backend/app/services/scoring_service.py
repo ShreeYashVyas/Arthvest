@@ -149,12 +149,22 @@ def calculate_us_conditions_score(
 
         freshness = data.get("freshness_status")
         if freshness != "fresh":
-            blockers.append(f"{SCORE_NAMES[key]} is stale or has unknown freshness.")
+            component_status = (
+                "in-progress" if freshness == "in-progress" else "stale"
+            )
+            if freshness == "in-progress":
+                blockers.append(
+                    f"{SCORE_NAMES[key]} belongs to a period that has not ended yet."
+                )
+            else:
+                blockers.append(
+                    f"{SCORE_NAMES[key]} is stale or has unknown freshness."
+                )
             components.append(
                 {
                     "key": key,
                     "indicator": SCORE_NAMES[key],
-                    "status": "stale",
+                    "status": component_status,
                     "value_percent": value,
                     "observation_date": data.get("observation_date"),
                     "freshness_status": freshness,
