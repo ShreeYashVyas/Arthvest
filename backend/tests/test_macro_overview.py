@@ -37,8 +37,8 @@ def test_macro_overview_returns_available_indicators(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["available_count"] == 3
-    assert payload["total_count"] == 3
+    assert payload["available_count"] == len(INDICATORS)
+    assert payload["total_count"] == len(INDICATORS)
     assert all(item["status"] == "available" for item in payload["indicators"])
     assert {item["key"] for item in payload["indicators"]} == set(INDICATORS)
 
