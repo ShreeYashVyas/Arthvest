@@ -31,31 +31,46 @@ const factorCards = [
   {
     code: "GLB",
     title: "Global economy",
-    description: "Growth, inflation and global liquidity",
+    description: "Current feed covers U.S. rates, inflation and employment only",
+    indicatorKeys: ["fed-funds", "us-inflation", "us-unemployment"],
+    scopeLabel: "U.S.-only coverage",
+    connected: true,
     icon: Globe2,
   },
   {
     code: "IND",
     title: "Indian economy",
-    description: "Domestic growth, rates and credit",
+    description: "GDP growth, annual inflation and policy uncertainty",
+    indicatorKeys: ["india-gdp-growth", "india-cpi-inflation-annual", "india-policy-uncertainty"],
+    scopeLabel: "Partial coverage",
+    connected: true,
     icon: BarChart3,
   },
   {
     code: "GEO",
     title: "Geopolitical risk",
-    description: "Conflict, trade and policy uncertainty",
+    description: "Conflict, trade and policy uncertainty signals",
+    indicatorKeys: [],
+    scopeLabel: "Not connected",
+    connected: false,
     icon: ShieldAlert,
   },
   {
     code: "MKT",
     title: "Market conditions",
-    description: "Trend, breadth and volatility",
+    description: "Market trend, breadth and volatility feeds",
+    indicatorKeys: [],
+    scopeLabel: "Not connected",
+    connected: false,
     icon: Activity,
   },
   {
     code: "FXC",
     title: "FX & commodities",
-    description: "Currency, energy and key inputs",
+    description: "INR/USD and real effective exchange rate; commodity feeds not yet added",
+    indicatorKeys: ["usd-inr", "india-reer"],
+    scopeLabel: "Partial coverage",
+    connected: true,
     icon: Layers3,
   },
 ];
@@ -409,6 +424,17 @@ export default function Home() {
               <div className="space-y-2">
                 {factorCards.map((factor) => {
                   const Icon = factor.icon;
+                  const matchingIndicators = macroOverview
+                    ? macroOverview.indicators.filter((item) => factor.indicatorKeys.includes(item.key))
+                    : [];
+                  const freshCount = matchingIndicators.filter(
+                    (item) => item.status === "available" && item.data?.freshness_status === "fresh",
+                  ).length;
+                  const availabilityLabel = !factor.connected
+                    ? "Not connected"
+                    : !macroOverview
+                      ? "Checking data"
+                      : `${freshCount}/${factor.indicatorKeys.length} fresh`;
                   return (
                     <div key={factor.code} className="group flex items-center gap-3 rounded-xl border border-line/80 bg-[#0B1017]/70 p-3 transition hover:border-slate-600 sm:gap-4 sm:p-4">
                       <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-panel text-muted transition group-hover:text-accent"><Icon size={16} /></div>
@@ -416,10 +442,17 @@ export default function Home() {
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-medium text-slate-200">{factor.title}</span>
                           <span className="text-[9px] tracking-[0.12em] text-muted">{factor.code}</span>
+                          <span className="rounded border border-line px-1.5 py-0.5 text-[8px] uppercase tracking-[0.08em] text-muted">{factor.scopeLabel}</span>
                         </div>
-                        <div className="mt-1 text-xs text-muted">{factor.description}</div>
+                        <div className="mt-1 text-xs leading-5 text-muted">{factor.description}</div>
                       </div>
-                      <span className="shrink-0 rounded-md border border-line px-2 py-1 text-[9px] uppercase tracking-[0.1em] text-muted">Pending</span>
+                      <span className={`shrink-0 rounded-md border px-2 py-1 text-[9px] uppercase tracking-[0.1em] ${
+                        !factor.connected
+                          ? "border-amber-300/25 bg-amber-300/5 text-amber-200"
+                          : macroOverview && freshCount === factor.indicatorKeys.length
+                            ? "border-accent/25 bg-accent/5 text-accent"
+                            : "border-line text-muted"
+                      }`}>{availabilityLabel}</span>
                     </div>
                   );
                 })}
