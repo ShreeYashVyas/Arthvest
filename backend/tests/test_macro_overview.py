@@ -151,8 +151,6 @@ def test_macro_quality_separates_stale_from_unavailable(monkeypatch) -> None:
 
 
 def test_history_route_returns_typed_historical_points(monkeypatch) -> None:
-    from app.services import macro_service
-
     history_payload = {
         "generated_at": "2026-10-23T09:00:00+00:00",
         "retrieved_at": "2026-10-23T08:55:00+00:00",
@@ -171,7 +169,7 @@ def test_history_route_returns_typed_historical_points(monkeypatch) -> None:
         ],
     }
     monkeypatch.setattr(
-        macro_service,
+        macro_routes,
         "fetch_macro_history",
         lambda _key, limit=12: {**history_payload, "requested_limit": limit},
     )
@@ -185,12 +183,10 @@ def test_history_route_returns_typed_historical_points(monkeypatch) -> None:
 
 
 def test_history_route_rejects_unsupported_indicator(monkeypatch) -> None:
-    from app.services import macro_service
-
     def fake_history(key: str, limit: int = 12):
         raise MacroDataError(f"Unsupported macro indicator: {key}")
 
-    monkeypatch.setattr(macro_service, "fetch_macro_history", fake_history)
+    monkeypatch.setattr(macro_routes, "fetch_macro_history", fake_history)
 
     response = client.get("/api/macro/history/not-supported")
 
