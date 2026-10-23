@@ -1,4 +1,4 @@
-"""Typed API response schemas for macroeconomic indicators."""
+"""Typed API response schemas for macroeconomic indicators and analytics."""
 
 from datetime import datetime
 from typing import Literal
@@ -22,6 +22,31 @@ class MacroIndicatorResponse(BaseModel):
     source_url: str
     retrieved_at: datetime
     calculation: str | None = None
+
+
+class MacroIndicatorMetadata(BaseModel):
+    """Definitions and transparent source metadata for one configured indicator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    indicator: str
+    description: str
+    series_id: str
+    frequency: str
+    unit: str
+    source: str
+    source_url: str
+    calculation: str
+    freshness_threshold_days: int = Field(ge=0)
+
+
+class MacroCatalogResponse(BaseModel):
+    """Catalog of indicators implemented in Arthvest."""
+
+    generated_at: datetime
+    total_count: int = Field(ge=0)
+    indicators: list[MacroIndicatorMetadata]
 
 
 class MacroOverviewItem(BaseModel):
