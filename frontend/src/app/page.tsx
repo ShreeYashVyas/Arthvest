@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchHistoricalAnalytics, fetchMacroCatalog, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchUSMacroScore, type HistoricalAnalytics, type MacroCatalog, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type USMacroScore } from "@/lib/api";
+import { fetchHistoricalAnalytics, fetchMacroCatalog, fetchMacroComparison, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchUSMacroScore, type HistoricalAnalytics, type MacroCatalog, type MacroComparison, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type USMacroScore } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -30,6 +30,18 @@ type HealthResponse = {
 };
 
 type ServiceState = "checking" | "connected" | "offline";
+
+
+const comparisonOptions = [
+  { key: "fed-funds", label: "Federal Funds Rate" },
+  { key: "us-inflation", label: "U.S. CPI inflation YoY" },
+  { key: "us-unemployment", label: "U.S. unemployment" },
+  { key: "india-gdp-growth", label: "India real GDP growth" },
+  { key: "india-cpi-inflation-annual", label: "India annual CPI inflation" },
+  { key: "india-policy-uncertainty", label: "India policy uncertainty" },
+  { key: "usd-inr", label: "INR per USD" },
+  { key: "india-reer", label: "India REER" },
+];
 
 const factorCards = [
   {
@@ -159,6 +171,80 @@ function Sparkline({
   );
 }
 
+
+function ComparisonPlot({ comparison }: { comparison: MacroComparison }) {
+  const usableSeries = comparison.series.filter(
+    (series) => series.status === "available" && series.points.length >= 2,
+  );
+  if (usableSeries.length === 0) return null;
+
+  const allValues = usableSeries.flatMap((series) =>
+    series.points.map((point) => point.indexed_value),
+  );
+  const minValue = Math.min(...allValues);
+  const maxValue = Math.max(...allValues);
+  const span = maxValue - minValue || 1;
+  const startMs = new Date(comparison.window_start + "T00:00:00Z").getTime();
+  const endMs = new Date(comparison.window_end + "T00:00:00Z").getTime();
+  const colors = ["#7dd3fc", "#c4b5fd", "#fbbf24", "#86efac", "#fda4af"];
+
+  return (
+    <div className="mt-5 rounded-xl border border-line bg-[#0B1017] p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-medium text-white">Relative trend · base = 100</div>
+          <p className="mt-1 text-[10px] leading-5 text-muted">
+            Indexed values are relative to each series&apos; first observation in the window.
+          </p>
+        </div>
+        <div className="text-[10px] text-muted">A higher index means the indicator&apos;s value increased.</div>
+      </div>
+      <svg viewBox="0 0 820 120" role="img" aria-label="Normalized historical comparison chart" className="mt-4 h-44 w-full overflow-visible">
+        {[20, 40, 60, 80, 100].map((y) => (
+          <line key={y} x1="10" x2="810" y1={y} y2={y} stroke="#26313f" strokeWidth="1" />
+        ))}
+        {usableSeries.map((series, index) => {
+          const coords = series.points.map((point) => {
+            const observedMs = new Date(point.observation_date + "T00:00:00Z").getTime();
+            const x = endMs > startMs
+              ? 10 + (Math.min(1, Math.max(0, (observedMs - startMs) / (endMs - startMs))) * 800)
+              : 10;
+            const y = 104 - ((point.indexed_value - minValue) / span) * 88;
+            return x.toFixed(2) + "," + y.toFixed(2);
+          }).join(" ");
+          return (
+            <polyline
+              key={series.key}
+              points={coords}
+              fill="none"
+              stroke={colors[index % colors.length]}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          );
+        })}
+      </svg>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+        {usableSeries.map((series) => {
+          const color = colors[usableSeries.findIndex((item) => item.key === series.key) % colors.length];
+          return (
+            <div key={series.key} className="flex items-center gap-2 text-[10px] text-slate-300">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+              <span>{series.indicator}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex justify-between text-[9px] text-muted">
+        <span>{new Date(comparison.window_start + "T00:00:00").toLocaleDateString("en-IN", { month: "short", year: "numeric" })}</span>
+        <span>{new Date(comparison.window_end + "T00:00:00").toLocaleDateString("en-IN", { month: "short", year: "numeric" })}</span>
+      </div>
+    </div>
+  );
+}
+
 function MacroDelta({
   history,
   unit,
@@ -209,6 +295,14 @@ export default function Home() {
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [analyticsRetry, setAnalyticsRetry] = useState(0);
+  const [comparisonKeys, setComparisonKeys] = useState<string[]>([
+    "fed-funds", "us-inflation", "us-unemployment",
+  ]);
+  const [comparisonYears, setComparisonYears] = useState(5);
+  const [comparison, setComparison] = useState<MacroComparison | null>(null);
+  const [comparisonLoading, setComparisonLoading] = useState(true);
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const [comparisonRetry, setComparisonRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -340,6 +434,31 @@ export default function Home() {
 
     return () => controller.abort();
   }, [analyticsKey, analyticsRetry]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setComparisonLoading(true);
+    setComparisonError(null);
+    setComparison(null);
+
+    fetchMacroComparison(comparisonKeys, comparisonYears, controller.signal)
+      .then((result) => {
+        setComparison(result);
+        setComparisonError(null);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setComparison(null);
+        setComparisonError(
+          error instanceof Error ? error.message : "Unable to compare archived macro indicators.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setComparisonLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [comparisonKeys, comparisonYears, comparisonRetry]);
 
   return (
     <main className="min-h-screen px-4 pb-10 pt-5 sm:px-7 lg:px-10">
@@ -663,6 +782,174 @@ export default function Home() {
               </>
             ) : (
               <p className="text-sm text-muted">No historical analytics were returned.</p>
+            )}
+          </div>
+        </section>
+
+
+        <section
+          aria-labelledby="macro-comparison-title"
+          className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/70"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">Research tools / relative trends</div>
+              <h2 id="macro-comparison-title" className="mt-2 text-xl font-medium text-white">
+                Cross-indicator comparison
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                Rebase each selected indicator to 100 at its first observation in the chosen calendar window. Compare relative movement, not raw units or economic desirability.
+              </p>
+            </div>
+            <label className="flex flex-col gap-2 text-[10px] uppercase tracking-[0.12em] text-muted">
+              Calendar window
+              <select
+                aria-label="Select comparison window"
+                value={comparisonYears}
+                onChange={(event) => setComparisonYears(Number(event.target.value))}
+                className="min-w-[150px] rounded-lg border border-line bg-[#0B1017] px-3 py-2.5 text-xs normal-case tracking-normal text-slate-100 outline-none transition focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
+              >
+                <option value={1}>1 year</option>
+                <option value={3}>3 years</option>
+                <option value={5}>5 years</option>
+                <option value={10}>10 years</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="p-5 sm:p-7">
+            <div className="mb-5 flex flex-wrap gap-2.5" aria-label="Indicators to compare">
+              {comparisonOptions.map((option) => {
+                const checked = comparisonKeys.includes(option.key);
+                const blocked =
+                  (checked && comparisonKeys.length <= 2) ||
+                  (!checked && comparisonKeys.length >= 5);
+                return (
+                  <label
+                    key={option.key}
+                    className={"inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition " +
+                      (checked ? "border-accent/40 bg-accent/5 text-slate-100" : "border-line bg-[#0B1017] text-muted") +
+                      (blocked ? " cursor-not-allowed opacity-60" : " cursor-pointer")}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={blocked}
+                      onChange={(event) => {
+                        setComparisonKeys((current) => {
+                          if (event.target.checked) {
+                            return current.length < 5 && !current.includes(option.key)
+                              ? [...current, option.key]
+                              : current;
+                          }
+                          return current.length > 2
+                            ? current.filter((key) => key !== option.key)
+                            : current;
+                        });
+                      }}
+                      className="accent-sky-300"
+                    />
+                    {option.label}
+                  </label>
+                );
+              })}
+            </div>
+
+            {comparisonLoading ? (
+              <div role="status" className="flex items-center gap-3 py-5 text-sm text-muted">
+                <RefreshCw size={16} className="animate-spin" /> Comparing archived observations…
+              </div>
+            ) : comparisonError ? (
+              <div role="status" className="flex flex-col items-start gap-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.03] p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <Database size={18} className="mt-0.5 shrink-0 text-amber-200" />
+                  <div>
+                    <div className="text-sm font-medium text-amber-100">Comparison unavailable</div>
+                    <p className="mt-2 max-w-3xl text-xs leading-5 text-muted">{comparisonError}</p>
+                    <p className="mt-2 max-w-3xl text-xs leading-5 text-muted">
+                      This feature reads the persistent observation archive. Check that DATABASE_URL is configured and reachable, then allow the backend to archive source observations.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setComparisonRetry((value) => value + 1)}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-slate-200 transition hover:border-accent/50 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
+                >
+                  <RefreshCw size={13} /> Retry comparison
+                </button>
+              </div>
+            ) : comparison ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-muted">
+                    Requested window: {new Date(comparison.window_start + "T00:00:00").toLocaleDateString("en-IN", { month: "short", year: "numeric" })} – {new Date(comparison.window_end + "T00:00:00").toLocaleDateString("en-IN", { month: "short", year: "numeric" })}
+                  </div>
+                  <div className="text-[10px] text-muted">
+                    {comparison.available_count} of {comparison.series.length} series normalizable
+                  </div>
+                </div>
+
+                <ComparisonPlot comparison={comparison} />
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {comparison.series.map((series) => (
+                    <article key={series.key} className="rounded-xl border border-line bg-[#0B1017] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className="text-sm font-medium leading-5 text-white">{series.indicator}</h3>
+                        <span className={"shrink-0 rounded-md border px-2 py-1 text-[9px] uppercase tracking-[0.08em] " +
+                          (series.status === "available" ? "border-accent/25 bg-accent/5 text-accent" : "border-amber-300/25 bg-amber-300/5 text-amber-200")}>
+                          {series.status === "available" ? "Indexed" : series.status.replace(/-/g, " ")}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="text-[10px] text-muted">Latest value</div>
+                          <div className="mt-1 text-lg font-light text-white">
+                            {series.latest_value === null ? "—" : series.latest_value.toLocaleString("en-US", { maximumFractionDigits: 3 })}
+                          </div>
+                          <div className="text-[9px] leading-4 text-muted">{series.unit}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-muted">Relative change</div>
+                          <div className="mt-1 text-lg font-light text-white">
+                            {series.relative_change_percent === null
+                              ? "—"
+                              : (series.relative_change_percent > 0 ? "+" : "") + series.relative_change_percent.toFixed(2) + "%"}
+                          </div>
+                          <div className="text-[9px] leading-4 text-muted">From first in-window value</div>
+                        </div>
+                      </div>
+                      <div className="mt-3 border-t border-line pt-3 text-[10px] leading-5 text-muted">
+                        <div>Baseline: {series.base_value === null ? "—" : series.base_value.toLocaleString("en-US", { maximumFractionDigits: 3 })} · {series.period_start ?? "no date"}</div>
+                        <div>Latest observation: {series.period_end ?? "no date"} · {series.observation_count} points</div>
+                        {series.reason ? <p className="mt-1 text-amber-200">{series.reason}</p> : null}
+                      </div>
+                      <a
+                        href={series.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-flex items-center gap-1.5 text-[10px] text-slate-300 underline decoration-line underline-offset-4 transition hover:text-accent"
+                      >
+                        Source · {series.series_id} <ArrowUpRight size={11} />
+                      </a>
+                    </article>
+                  ))}
+                </div>
+
+                <details className="mt-4 rounded-xl border border-line px-4 py-3">
+                  <summary className="cursor-pointer text-xs font-medium text-slate-200">Comparison methodology & limitations</summary>
+                  <p className="mt-3 text-xs leading-5 text-muted">{comparison.methodology}</p>
+                  <ul className="mt-3 list-disc space-y-1.5 pl-5 text-xs leading-5 text-muted">
+                    {comparison.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
+                  </ul>
+                  <p className="mt-3 text-[10px] text-muted">
+                    Calculated {new Date(comparison.generated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                  </p>
+                </details>
+              </>
+            ) : (
+              <p className="text-sm text-muted">No macro comparison was returned.</p>
             )}
           </div>
         </section>

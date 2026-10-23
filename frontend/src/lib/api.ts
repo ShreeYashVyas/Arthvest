@@ -545,3 +545,141 @@ export async function fetchHistoricalAnalytics(
   }
   return payload;
 }
+
+
+export type MacroComparisonStatus =
+  | "available"
+  | "insufficient-history"
+  | "non-positive-base-value";
+
+export type MacroComparisonPoint = {
+  observation_date: string;
+  raw_value: number;
+  indexed_value: number;
+};
+
+export type MacroComparisonSeries = {
+  key: string;
+  indicator: string;
+  series_id: string;
+  unit: string;
+  frequency: string;
+  source: string;
+  source_url: string;
+  status: MacroComparisonStatus;
+  reason: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  observation_count: number;
+  base_value: number | null;
+  latest_value: number | null;
+  relative_change_percent: number | null;
+  points: MacroComparisonPoint[];
+};
+
+export type MacroComparison = {
+  generated_at: string;
+  years: number;
+  window_start: string;
+  window_end: string;
+  requested_indicators: string[];
+  available_count: number;
+  series: MacroComparisonSeries[];
+  methodology: string;
+  limitations: string[];
+};
+
+function isMacroComparison(value: unknown): value is MacroComparison {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  if (
+    typeof data.generated_at !== "string" ||
+    typeof data.years !== "number" ||
+    typeof data.window_start !== "string" ||
+    typeof data.window_end !== "string" ||
+    !Array.isArray(data.requested_indicators) ||
+    !data.requested_indicators.every((key: unknown) => typeof key === "string") ||
+    typeof data.available_count !== "number" ||
+    !Array.isArray(data.series) ||
+    typeof data.methodology !== "string" ||
+    !Array.isArray(data.limitations) ||
+    !data.limitations.every((item: unknown) => typeof item === "string")
+  ) return false;
+
+  return data.series.every((rawSeries: unknown) => {
+    if (typeof rawSeries !== "object" || rawSeries === null) return false;
+    const series = rawSeries as Record<string, unknown>;
+    if (
+      typeof series.key !== "string" ||
+      typeof series.indicator !== "string" ||
+      typeof series.series_id !== "string" ||
+      typeof series.unit !== "string" ||
+      typeof series.frequency !== "string" ||
+      typeof series.source !== "string" ||
+      typeof series.source_url !== "string" ||
+      !["available", "insufficient-history", "non-positive-base-value"].includes(String(series.status)) ||
+      !(series.reason === null || typeof series.reason === "string") ||
+      !(series.period_start === null || typeof series.period_start === "string") ||
+      !(series.period_end === null || typeof series.period_end === "string") ||
+      typeof series.observation_count !== "number" ||
+      !isNullableFiniteNumber(series.base_value) ||
+      !isNullableFiniteNumber(series.latest_value) ||
+      !isNullableFiniteNumber(series.relative_change_percent) ||
+      !Array.isArray(series.points)
+    ) return false;
+
+    return series.points.every((rawPoint: unknown) => {
+      if (typeof rawPoint !== "object" || rawPoint === null) return false;
+      const point = rawPoint as Record<string, unknown>;
+      return typeof point.observation_date === "string" &&
+        typeof point.raw_value === "number" && Number.isFinite(point.raw_value) &&
+        typeof point.indexed_value === "number" && Number.isFinite(point.indexed_value);
+    });
+  });
+}
+
+export async function fetchMacroComparison(
+  indicators: string[],
+  years = 5,
+  signal?: AbortSignal,
+): Promise<MacroComparison> {
+  const allowedKeys = [
+    "fed-funds",
+    "us-inflation",
+    "us-unemployment",
+    "india-gdp-growth",
+    "india-cpi-inflation-annual",
+    "india-policy-uncertainty",
+    "usd-inr",
+    "india-reer",
+  ];
+  if (indicators.length < 2 || indicators.length > 5 ||
+      new Set(indicators).size !== indicators.length ||
+      !indicators.every((key) => allowedKeys.includes(key))) {
+    throw new Error("Select between 2 and 5 different supported indicators.");
+  }
+  if (![1, 3, 5, 10].includes(years)) {
+    throw new Error("Comparison window must be 1, 3, 5, or 10 years.");
+  }
+
+  const params = new URLSearchParams({
+    indicators: indicators.join(","),
+    years: String(years),
+  });
+  const response = await fetch(API_BASE_URL + "/api/macro/compare?" + params.toString(), {
+    cache: "no-store",
+    signal,
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = typeof payload === "object" && payload !== null &&
+      "detail" in payload && typeof (payload as { detail?: unknown }).detail === "string"
+      ? (payload as { detail: string }).detail
+      : null;
+    throw new Error(detail ?? "Macro comparison is temporarily unavailable.");
+  }
+  if (!isMacroComparison(payload)) {
+    throw new Error("Macro comparison API returned an unexpected response format.");
+  }
+  return payload;
+}
