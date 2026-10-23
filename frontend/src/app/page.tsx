@@ -590,7 +590,7 @@ export default function Home() {
                 Macro indicator board
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-                Source-attributed U.S. indicators to establish the first working data pipeline. Each card shows the source observation date, not a real-time market quote.
+                Source-attributed U.S. and Indian macroeconomic series plus foreign-exchange indicators. Period labels follow each source's publishing frequency; these are observations, not streaming market quotes.
               </p>
             </div>
             <span className="rounded-full border border-line px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-muted">
@@ -683,7 +683,7 @@ export default function Home() {
                             {item.data.source} <ArrowUpRight size={12} />
                           </a>
                           <div className="mt-2 text-[10px] text-muted">
-                            {item.data.series_id} · Retrieved {new Date(item.data.retrieved_at).toLocaleString("en-IN", {
+                            {item.data.series_id} · {item.data.frequency} · Retrieved {new Date(item.data.retrieved_at).toLocaleString("en-IN", {
                               dateStyle: "medium",
                               timeStyle: "short",
                             })}
