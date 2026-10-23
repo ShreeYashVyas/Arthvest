@@ -16,6 +16,7 @@ from app.schemas.macro import (
     MacroOverviewResponse,
     MacroQualityItem,
     MacroQualityResponse,
+    USMacroScoreResponse,
 )
 from app.services.macro_service import (
     INDICATORS,
@@ -24,6 +25,7 @@ from app.services.macro_service import (
     fetch_macro_indicator,
     fetch_fed_funds_rate,
 )
+from app.services.scoring_service import SCORE_WEIGHTS, calculate_us_conditions_score
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/macro", tags=["macro indicators"])
@@ -222,3 +224,32 @@ def get_macro_history(
                 else "Historical macro observations are temporarily unavailable."
             ),
         ) from exc
+
+
+
+@router.get(
+    "/score/us-conditions",
+    response_model=USMacroScoreResponse,
+    summary="Get the provisional U.S. macro conditions subscore",
+)
+def get_us_conditions_score() -> USMacroScoreResponse:
+    """Calculate a provisional U.S.-only score, withholding it when inputs are not fresh."""
+    keys = list(SCORE_WEIGHTS)
+    inputs: dict[str, dict[str, str | float] | None] = {}
+    errors: dict[str, str] = {}
+
+    with ThreadPoolExecutor(max_workers=len(keys)) as executor:
+        futures = {
+            key: executor.submit(fetch_macro_indicator, key)
+            for key in keys
+        }
+        for key, future in futures.items():
+            try:
+                inputs[key] = future.result()
+            except MacroDataError as exc:
+                logger.warning("Score input %s unavailable: %s", key, exc)
+                inputs[key] = None
+                errors[key] = "Source is temporarily unavailable or could not be validated."
+
+    result = calculate_us_conditions_score(inputs, errors)
+    return USMacroScoreResponse.model_validate(result)
