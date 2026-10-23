@@ -528,9 +528,9 @@ export default function Home() {
                       <>
                         <div className="mt-3 flex items-baseline gap-2">
                           <span className="text-4xl font-light tracking-tight text-white">
-                            {item.data.value_percent.toFixed(2)}
+                            {item.data.value.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
                           </span>
-                          <span className="text-sm text-accent">%</span>
+                          <span className="max-w-[120px] break-words text-xs leading-4 text-accent">{item.data.unit.startsWith("percent") ? "%" : item.data.unit}</span>
                         </div>
                         <div className="mt-4 border-t border-line pt-3">
                           <div className="text-[10px] uppercase tracking-[0.12em] text-muted">Observation date</div>
