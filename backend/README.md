@@ -18,8 +18,10 @@ Use these endpoints:
 - `GET /health` — health status
 - `GET /docs` — interactive API documentation
 
-Run the smoke tests after installing test dependencies with `python -m pip install pytest httpx`:
+Install development tooling and run tests/lint checks:
 
 ```powershell
-pytest
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+ruff check --select E4,E7,E9,F app tests
 ```
