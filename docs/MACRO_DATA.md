@@ -35,14 +35,14 @@ The public FRED series pages below were checked on **2026-10-23** to confirm tha
 
 | Arthvest key | Upstream series page | Latest observation shown during check |
 |---|---|---|
-| `fed-funds` | [FEDFUNDS](https://fred.stlouisfed.org/series/FEDFUNDS) | September 2026, monthly |
-| `us-inflation` | [CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) | September 2026, monthly CPI index; Arthvest derives year-over-year inflation |
-| `us-unemployment` | [UNRATE](https://fred.stlouisfed.org/series/UNRATE) | September 2026, monthly |
-| `india-gdp-growth` | [INDGDPRQPSMEI](https://fred.stlouisfed.org/series/INDGDPRQPSMEI) | Q2 2026, quarterly year-over-year growth |
-| `india-cpi-inflation-annual` | [FPCPITOTLZGIND](https://fred.stlouisfed.org/series/FPCPITOTLZGIND) | 2025, annual |
-| `india-policy-uncertainty` | [INDEPUINDXM](https://fred.stlouisfed.org/series/INDEPUINDXM) | September 2026, monthly |
-| `usd-inr` | [DEXINUS](https://fred.stlouisfed.org/series/DEXINUS) | October 16, 2026, latest date shown in the FRED data table |
-| `india-reer` | [CCRETT01INM661N](https://fred.stlouisfed.org/series/CCRETT01INM661N) | August 2026, monthly |
+| `fed-funds` | [FEDFUNDS](https://fred.stlouisfed.org/series/FEDFUNDS) | September 2026: 3.75% |
+| `us-inflation` | [CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) | September 2026: 3.72% year-over-year, calculated by Arthvest |
+| `us-unemployment` | [UNRATE](https://fred.stlouisfed.org/series/UNRATE) | September 2026: 4.2% |
+| `india-gdp-growth` | [INDGDPRQPSMEI](https://fred.stlouisfed.org/series/INDGDPRQPSMEI) | Q2 2026: 8.098% year-over-year |
+| `india-cpi-inflation-annual` | [FPCPITOTLZGIND](https://fred.stlouisfed.org/series/FPCPITOTLZGIND) | 2025: 2.399% annual inflation |
+| `india-policy-uncertainty` | [INDEPUINDXM](https://fred.stlouisfed.org/series/INDEPUINDXM) | September 2026: 184.6 index points |
+| `usd-inr` | [DEXINUS](https://fred.stlouisfed.org/series/DEXINUS) | October 16, 2026: ₹94.96 per USD |
+| `india-reer` | [CCRETT01INM661N](https://fred.stlouisfed.org/series/CCRETT01INM661N) | September 2026: 92.37 index points (base 2015=100) |
 
 
 ## Calculation rules
