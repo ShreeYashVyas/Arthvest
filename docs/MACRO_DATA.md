@@ -48,6 +48,27 @@ The score currently combines only three U.S. observations:
 
 Fixed threshold bands translate each input into a 0–100 component score and calculate a weighted average. The score is withheld if a required observation is unavailable, invalid or stale.
 
+Exact prototype bands returned by the API:
+
+| Component | Input threshold | Component score |
+|---|---|---:|
+| Federal Funds Rate | value <= 2.00% | 85 |
+| Federal Funds Rate | > 2.00% and <= 3.50% | 75 |
+| Federal Funds Rate | > 3.50% and <= 4.50% | 60 |
+| Federal Funds Rate | > 4.50% and <= 5.50% | 40 |
+| Federal Funds Rate | > 5.50% | 20 |
+| U.S. CPI inflation | value <= 2.00% | 90 |
+| U.S. CPI inflation | > 2.00% and <= 3.00% | 80 |
+| U.S. CPI inflation | > 3.00% and <= 4.00% | 65 |
+| U.S. CPI inflation | > 4.00% and <= 5.00% | 45 |
+| U.S. CPI inflation | > 5.00% | 25 |
+| U.S. unemployment | value <= 3.50% | 85 |
+| U.S. unemployment | > 3.50% and <= 4.50% | 75 |
+| U.S. unemployment | > 4.50% and <= 5.50% | 55 |
+| U.S. unemployment | > 5.50% and <= 6.50% | 35 |
+| U.S. unemployment | > 6.50% | 20 |
+
+
 **Important limitations:** these weights, bands and labels are illustrative and have not been calibrated or backtested. The subscore is not the full Arthvest macro regime model and does not include India conditions, market pricing, commodities or geopolitical events. Do not use it as a standalone trading signal.
 
 ## Source series
