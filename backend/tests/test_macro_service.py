@@ -153,6 +153,7 @@ def test_history_rejects_out_of_range_limit() -> None:
 @pytest.mark.parametrize(
     ("key", "series_id", "observation_date", "expected_unit", "value"),
     [
+        ("india-gdp-growth", "INDGDPRQPSMEI", "2026-07-01", "percent year over year", 8.1),
         ("india-policy-uncertainty", "INDEPUINDXM", "2026-09-01", "index", 184.61),
         ("usd-inr", "DEXINUS", "2026-10-16", "INR per USD", 94.96),
         ("india-reer", "CCRETT01INM661N", "2026-08-01", "index (2015=100)", 91.47),
