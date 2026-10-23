@@ -15,7 +15,7 @@ def _sample_payload(key: str) -> dict[str, str | float]:
     return {
         "indicator": config["indicator"],
         "series_id": config["series_id"],
-        "value_percent": value,
+        "value": value,
         "observation_date": "2026-09-01",
         "observation_age_days": 52,
         "freshness_status": "fresh",
