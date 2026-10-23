@@ -17,7 +17,7 @@ class MacroIndicatorResponse(BaseModel):
     observation_date: str
     frequency: str
     observation_age_days: int = Field(ge=0)
-    freshness_status: Literal["fresh", "stale"]
+    freshness_status: Literal["fresh", "stale", "in-progress"]
     unit: str
     source: str
     source_url: str
@@ -78,7 +78,7 @@ class MacroQualityItem(BaseModel):
 
     key: str
     status: Literal["available", "unavailable"]
-    freshness_status: Literal["fresh", "stale"] | None = None
+    freshness_status: Literal["fresh", "stale", "in-progress"] | None = None
     observation_age_days: int | None = Field(default=None, ge=0)
     issue: str | None = None
 
@@ -92,6 +92,7 @@ class MacroQualityResponse(BaseModel):
     unavailable_count: int = Field(ge=0)
     fresh_count: int = Field(ge=0)
     stale_count: int = Field(ge=0)
+    in_progress_count: int = Field(ge=0)
     coverage_percent: float = Field(ge=0, le=100)
     quality_status: Literal["good", "partial", "unavailable"]
     note: str
@@ -128,10 +129,10 @@ class MacroScoreComponent(BaseModel):
 
     key: str
     indicator: str
-    status: Literal["available", "stale", "unavailable"]
+    status: Literal["available", "stale", "in-progress", "unavailable"]
     value_percent: float | None = Field(default=None, allow_inf_nan=False)
     observation_date: str | None = None
-    freshness_status: Literal["fresh", "stale"] | None = None
+    freshness_status: Literal["fresh", "stale", "in-progress"] | None = None
     component_score: float | None = Field(default=None, ge=0, le=100)
     weight: float = Field(ge=0, le=1)
     weighted_points: float | None = Field(default=None, ge=0, le=100)
