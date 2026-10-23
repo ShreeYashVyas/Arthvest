@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class MacroIndicatorResponse(BaseModel):
-    """A measured macro indicator with data provenance."""
+    """A measured macro indicator with data provenance and freshness."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -15,6 +15,8 @@ class MacroIndicatorResponse(BaseModel):
     series_id: str
     value_percent: float = Field(allow_inf_nan=False)
     observation_date: str
+    observation_age_days: int = Field(ge=0)
+    freshness_status: Literal["fresh", "stale"]
     unit: str
     source: str
     source_url: str
