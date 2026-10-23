@@ -10,7 +10,7 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 - FastAPI endpoints for health, a macro-indicator catalog, a best-effort overview, history, data quality, and a provisional U.S. score.
 - U.S. indicators: Federal Funds Effective Rate, CPI inflation (calculated year over year), and unemployment rate.
 - India-related indicators: quarterly real GDP growth, annual consumer-price inflation, Economic Policy Uncertainty Index, INR per USD exchange rate, and real effective exchange rate.
-- Source observation dates, retrieval timestamps, units and freshness classification.
+- Source observation dates, retrieval timestamps, native units, frequency-aware freshness and period-labelled historical trends.
 - In-process 15-minute source-series cache and parser/API/scoring tests.
 - GitHub Actions workflow for backend tests and frontend production build.
 
