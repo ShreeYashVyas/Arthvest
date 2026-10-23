@@ -10,7 +10,7 @@ from app.services.scoring_service import (
 
 def _indicator(value: float, freshness: str = "fresh") -> dict[str, object]:
     return {
-        "value_percent": value,
+        "value": value,
         "observation_date": "2026-10-01",
         "freshness_status": freshness,
     }
