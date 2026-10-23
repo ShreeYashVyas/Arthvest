@@ -465,7 +465,19 @@ export default function Home() {
                 <details className="mt-5 rounded-xl border border-line px-4 py-3">
                   <summary className="cursor-pointer text-xs font-medium text-slate-200">Scoring methodology & limitations</summary>
                   <p className="mt-3 text-xs leading-6 text-muted">{usScore.methodology}</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-muted">
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    {Object.entries(usScore.threshold_rules).map(([key, rules]) => (
+                      <div key={key} className="rounded-lg border border-line bg-[#0B1017] p-3">
+                        <div className="text-xs font-medium text-slate-200">
+                          {usScore.components.find((component) => component.key === key)?.indicator ?? key}
+                        </div>
+                        <ul className="mt-2 space-y-1.5 text-[10px] leading-4 text-muted">
+                          {rules.map((rule) => <li key={rule}>{rule}</li>)}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                  <ul className="mt-4 list-disc space-y-1 pl-5 text-xs leading-5 text-muted">
                     {usScore.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
                   </ul>
                 </details>
