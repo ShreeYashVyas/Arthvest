@@ -58,6 +58,16 @@ INDICATORS: dict[str, dict[str, str]] = {
         "calculation": "Latest available quarterly year-over-year growth observation, shown as published.",
         "max_age_days": "240",
     },
+    "india-cpi-inflation-annual": {
+        "indicator": "India Consumer Price Inflation (annual)",
+        "description": "Annual percentage change in consumer prices in India, based on the consumer price index.",
+        "frequency": "Annual",
+        "series_id": "FPCPITOTLZGIND",
+        "unit": "percent (annual)",
+        "source": "World Bank via FRED",
+        "calculation": "Latest published annual percentage change in consumer prices; this is annual data, not a monthly inflation reading.",
+        "max_age_days": "550",
+    },
     "india-policy-uncertainty": {
         "indicator": "India Economic Policy Uncertainty Index",
         "description": "Monthly index tracking economic policy uncertainty in India.",
