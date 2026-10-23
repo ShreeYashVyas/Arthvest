@@ -152,3 +152,60 @@ def test_legacy_fed_funds_endpoint_maps_source_failure_to_502(monkeypatch) -> No
 
     assert response.status_code == 502
     assert "temporarily unavailable" in response.json()["detail"]
+
+
+
+def test_history_returns_metadata_and_requested_number_of_points(monkeypatch) -> None:
+    def fake_history(key: str, *, limit: int) -> dict[str, Any]:
+        assert key == "fed-funds"
+        assert limit == 2
+        return {
+            "generated_at": "2026-10-23T00:00:00+00:00",
+            "retrieved_at": "2026-10-23T00:00:00+00:00",
+            "key": key,
+            "indicator": INDICATORS[key]["indicator"],
+            "series_id": INDICATORS[key]["series_id"],
+            "unit": INDICATORS[key]["unit"],
+            "frequency": INDICATORS[key]["frequency"],
+            "source": INDICATORS[key]["source"],
+            "source_url": f"https://fred.stlouisfed.org/series/{INDICATORS[key]['series_id']}",
+            "calculation": INDICATORS[key]["calculation"],
+            "requested_limit": limit,
+            "returned_count": 2,
+            "points": [
+                {"observation_date": "2026-08-01", "value": 3.75},
+                {"observation_date": "2026-09-01", "value": 3.62},
+            ],
+        }
+
+    monkeypatch.setattr(macro_routes, "fetch_macro_history", fake_history)
+
+    response = client.get("/api/macro/history/fed-funds?limit=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requested_limit"] == 2
+    assert payload["returned_count"] == 2
+    assert payload["series_id"] == "FEDFUNDS"
+    assert payload["points"][-1]["value"] == 3.62
+
+
+def test_score_returns_a_provisional_result_when_all_inputs_are_fresh(
+    monkeypatch,
+) -> None:
+    values = {"fed-funds": 2.0, "us-inflation": 3.2, "us-unemployment": 5.0}
+    monkeypatch.setattr(
+        macro_routes,
+        "fetch_macro_indicator",
+        lambda key: _observation(key, value=values[key]),
+    )
+
+    response = client.get("/api/macro/score/us-conditions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["score"] == 67.0
+    assert payload["label"] == "mixed"
+    assert payload["provisional"] is True
+    assert payload["blockers"] == []
