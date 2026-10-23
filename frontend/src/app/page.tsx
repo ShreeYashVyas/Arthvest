@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchUSMacroScore, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type USMacroScore } from "@/lib/api";
+import { fetchMacroCatalog, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchUSMacroScore, type MacroCatalog, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type USMacroScore } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -126,6 +126,8 @@ export default function Home() {
   const [macroError, setMacroError] = useState<string | null>(null);
   const [macroQuality, setMacroQuality] = useState<MacroQuality | null>(null);
   const [qualityError, setQualityError] = useState<string | null>(null);
+  const [macroCatalog, setMacroCatalog] = useState<MacroCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [usScore, setUsScore] = useState<USMacroScore | null>(null);
   const [scoreLoading, setScoreLoading] = useState(true);
   const [scoreError, setScoreError] = useState<string | null>(null);
@@ -156,6 +158,20 @@ export default function Home() {
           if (active) {
             setQualityError(
               error instanceof Error ? error.message : "Unable to load data quality.",
+            );
+          }
+        }
+
+        try {
+          const catalog = await fetchMacroCatalog(controller.signal);
+          if (active) {
+            setMacroCatalog(catalog);
+            setCatalogError(null);
+          }
+        } catch (error: unknown) {
+          if (active) {
+            setCatalogError(
+              error instanceof Error ? error.message : "Unable to load the indicator catalog.",
             );
           }
         }
@@ -668,6 +684,58 @@ export default function Home() {
             ) : null}
           </div>
         </section>
+
+        <details className="mt-4 overflow-hidden rounded-2xl border border-line bg-panel/50">
+          <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-slate-200 transition hover:text-accent sm:px-6">
+            Indicator definitions, sources & freshness thresholds
+            <span className="ml-2 text-xs font-normal text-muted">
+              {macroCatalog ? `${macroCatalog.total_count} indicators` : catalogError ? "catalog unavailable" : "loading catalog"}
+            </span>
+          </summary>
+          <div className="border-t border-line">
+            {macroCatalog ? (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] border-collapse text-left text-xs">
+                  <thead className="bg-[#0B1017] text-[10px] uppercase tracking-[0.12em] text-muted">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Indicator</th>
+                      <th className="px-4 py-3 font-medium">Series / frequency</th>
+                      <th className="px-4 py-3 font-medium">Freshness rule</th>
+                      <th className="px-4 py-3 font-medium">Source & method</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {macroCatalog.indicators.map((indicator) => (
+                      <tr key={indicator.key} className="border-t border-line/70 align-top">
+                        <td className="px-4 py-4">
+                          <div className="font-medium text-slate-200">{indicator.indicator}</div>
+                          <div className="mt-1 max-w-xs leading-5 text-muted">{indicator.description}</div>
+                        </td>
+                        <td className="px-4 py-4 text-slate-300">
+                          <div>{indicator.series_id}</div>
+                          <div className="mt-1 text-muted">{indicator.frequency}</div>
+                          <div className="mt-1 text-muted">{indicator.unit}</div>
+                        </td>
+                        <td className="px-4 py-4 text-slate-300">
+                          {indicator.freshness_threshold_days} calendar days
+                          <div className="mt-1 max-w-[150px] leading-5 text-muted">Provisional staleness threshold</div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <a href={indicator.source_url} target="_blank" rel="noreferrer" className="text-slate-200 underline decoration-line underline-offset-4 hover:text-accent">
+                            {indicator.source}
+                          </a>
+                          <div className="mt-2 max-w-sm leading-5 text-muted">{indicator.calculation}</div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="px-5 py-4 text-xs text-muted">{catalogError ?? "Loading source definitions…"}</p>
+            )}
+          </div>
+        </details>
 
         <section className="mt-6 grid gap-4 md:grid-cols-3">
           <div className="rounded-2xl border border-line bg-panel/50 p-5">
