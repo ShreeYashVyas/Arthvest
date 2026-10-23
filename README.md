@@ -11,7 +11,7 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 - U.S. indicators: Federal Funds Effective Rate, CPI inflation (calculated year over year), and unemployment rate.
 - India-related indicators: quarterly real GDP growth, annual consumer-price inflation, Economic Policy Uncertainty Index, INR per USD exchange rate, and real effective exchange rate.
 - Source observation dates, retrieval timestamps, native units, frequency-aware freshness and period-labelled historical trends.
-- In-process 15-minute source-series cache; optional SQLAlchemy persistence for source observations, upstream revisions, and fetch successes/failures; descriptive analytics and comparison over the archive.
+- In-process 15-minute source-series cache; optional SQLAlchemy persistence for source observations, upstream revisions, and fetch successes/failures; descriptive analytics, relative comparison and scheduled archive ingestion.
 - GitHub Actions workflow for backend tests and frontend production build.
 
 ## Technology
@@ -143,3 +143,8 @@ The optional archive also powers `GET /api/macro/compare?indicators=fed-funds,us
 ## Archive health monitor
 
 The dashboard's Archive Health panel reads `GET /api/macro/storage` and, when persistence is reachable, `GET /api/macro/source-checks?limit=12`. It shows whether persistence is disabled, reachable, or configured but unreachable, along with retained observation/revision/source-check counts and recent fetch outcomes. The configured database URL and credentials are never displayed by this endpoint.
+
+
+## Scheduled archive ingestion
+
+The **Archive Macro Observations** GitHub Actions workflow can be run manually or on its daily schedule (02:00 UTC / 07:30 IST). It fetches all eight configured macro indicators and verifies that the database source-check count increased, so a fetch-only run is not reported as a successful archive write. Configure a repository Actions secret named `DATABASE_URL` before enabling it. This must be set separately from any deployment environment secret; keep the connection string private. The workflow fails clearly when the secret is missing, the database is unreachable, or expected write records are not confirmed.

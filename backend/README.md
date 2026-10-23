@@ -44,3 +44,8 @@ The archive stores source-native FRED values. For example, `CPIAUCSL` is the CPI
 ## Archived cross-indicator comparison
 
 When `DATABASE_URL` points to a reachable database, use `GET /api/macro/compare?indicators=fed-funds,us-inflation,us-unemployment&years=5` to compare 2–5 supported indicators across a 1, 3, 5, or 10 year window. Relative trends are independently rebased to 100 at each indicator's first in-window archived observation. Different source frequencies are preserved, and series without enough history or a positive baseline are marked explicitly.
+
+
+## Scheduled archive ingestion
+
+Run `python -m scripts.ingest_macro_archive` from the backend directory to fetch each configured indicator and verify that persisted source-check records were added. It refuses to start without `DATABASE_URL`, checks storage connectivity first, and returns a non-zero exit code for upstream failures or unconfirmed archive writes. The repository's **Archive Macro Observations** workflow runs this daily and can also be started manually; add a repository Actions secret named `DATABASE_URL` separately from deployment secrets.
