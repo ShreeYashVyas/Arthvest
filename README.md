@@ -115,7 +115,9 @@ The optional archive can power a descriptive analytics endpoint such as `/api/ma
 | `GET /api/macro/storage` | Database readiness and archive counts |
 | `GET /api/macro/archive/{indicator_key}?limit=12` | Stored source-native observations (requires `DATABASE_URL`) |
 | `GET /api/macro/revisions/{indicator_key}?limit=20` | Detected upstream value revisions (requires `DATABASE_URL`) |
-| `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)\n| `GET /api/macro/analytics/{indicator_key}?limit=12` | Descriptive analytics over archived observations (requires `DATABASE_URL`)\n| `GET /api/macro/compare?indicators=fed-funds,us-inflation,us-unemployment&years=5` | Rebased relative trends for 2–5 archived indicators (requires `DATABASE_URL`)
+| `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)
+| `GET /api/macro/analytics/{indicator_key}?limit=12` | Descriptive analytics over archived observations (requires `DATABASE_URL`)
+| `GET /api/macro/compare?indicators=fed-funds,us-inflation,us-unemployment&years=5` | Rebased relative trends for 2–5 archived indicators (requires `DATABASE_URL`)
 
 Indicator keys, formulas, sources and freshness thresholds are documented in [docs/MACRO_DATA.md](docs/MACRO_DATA.md).
 
