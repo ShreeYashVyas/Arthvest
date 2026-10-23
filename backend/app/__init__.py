@@ -1,0 +1,1 @@
+"""Arthvest backend application package."""
