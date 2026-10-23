@@ -55,7 +55,7 @@ def test_macro_overview_preserves_partial_results(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["available_count"] == 2
+    assert payload["available_count"] == len(INDICATORS) - 1
     result_by_key = {item["key"]: item for item in payload["indicators"]}
     assert result_by_key["us-inflation"]["status"] == "unavailable"
     assert result_by_key["us-inflation"]["data"] is None
