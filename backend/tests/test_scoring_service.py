@@ -133,3 +133,20 @@ def test_all_scoring_threshold_boundaries(
     expected: float,
 ) -> None:
     assert _component_score(key, value) == expected
+
+
+
+def test_score_is_withheld_when_an_input_period_is_in_progress() -> None:
+    inputs = _complete_inputs()
+    inputs["fed-funds"] = _indicator(4.0, freshness="in-progress")
+
+    result = calculate_us_conditions_score(inputs)
+
+    assert result["available"] is False
+    assert result["score"] is None
+    assert any("period that has not ended" in blocker for blocker in result["blockers"])
+    component = next(
+        item for item in result["components"] if item["key"] == "fed-funds"
+    )
+    assert component["status"] == "in-progress"
+    assert component["component_score"] is None
