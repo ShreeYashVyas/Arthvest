@@ -4,10 +4,11 @@ The service is deliberately source-first: indicator readings retain their source
 observation date and the time this process last retrieved the upstream data.
 """
 
+import calendar
 import csv
 import math
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from io import StringIO
 from threading import Lock
 from urllib.error import URLError
@@ -66,7 +67,7 @@ INDICATORS: dict[str, dict[str, str]] = {
         "unit": "percent (annual)",
         "source": "World Bank via FRED",
         "calculation": "Latest published annual percentage change in consumer prices; this is annual data, not a monthly inflation reading.",
-        "max_age_days": "800",
+        "max_age_days": "550",
     },
     "india-policy-uncertainty": {
         "indicator": "India Economic Policy Uncertainty Index",
@@ -175,6 +176,30 @@ def _fetch_fred_series(series_id: str) -> tuple[list[tuple[str, float]], str]:
     return list(observations), retrieved_at
 
 
+def _observation_period_end(
+    observation_date: str,
+    frequency: str,
+) -> date:
+    """Interpret period-start timestamps as the end of their represented period."""
+    parsed = datetime.strptime(observation_date, "%Y-%m-%d").date()
+    if frequency == "Annual":
+        return date(parsed.year, 12, 31)
+    if frequency == "Quarterly":
+        quarter_end_month = ((parsed.month - 1) // 3 + 1) * 3
+        return date(
+            parsed.year,
+            quarter_end_month,
+            calendar.monthrange(parsed.year, quarter_end_month)[1],
+        )
+    if frequency == "Monthly":
+        return date(
+            parsed.year,
+            parsed.month,
+            calendar.monthrange(parsed.year, parsed.month)[1],
+        )
+    return parsed
+
+
 def fetch_macro_indicator(indicator_key: str) -> dict[str, str | float]:
     """Fetch and normalize one supported indicator into a provenance-rich payload."""
     config = INDICATORS.get(indicator_key)
@@ -197,7 +222,10 @@ def fetch_macro_indicator(indicator_key: str) -> dict[str, str | float]:
             )
         value = round((latest_value / prior_year_value - 1) * 100, 2)
 
-    observation_day = datetime.strptime(observation_date, "%Y-%m-%d").date()
+    observation_day = _observation_period_end(
+        observation_date,
+        config["frequency"],
+    )
     today = datetime.now(timezone.utc).date()
     age_days = (today - observation_day).days
     if age_days < 0:
@@ -212,6 +240,7 @@ def fetch_macro_indicator(indicator_key: str) -> dict[str, str | float]:
         "series_id": series_id,
         "value": value,
         "observation_date": observation_date,
+        "frequency": config["frequency"],
         "unit": config["unit"],
         "source": config["source"],
         "source_url": f"https://fred.stlouisfed.org/series/{series_id}",
@@ -279,6 +308,7 @@ def fetch_macro_history(indicator_key: str, limit: int = 12) -> dict[str, object
         "indicator": config["indicator"],
         "series_id": series_id,
         "unit": unit,
+        "frequency": config["frequency"],
         "source": config["source"],
         "source_url": f"https://fred.stlouisfed.org/series/{series_id}",
         "calculation": config["calculation"],
