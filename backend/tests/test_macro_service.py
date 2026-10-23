@@ -1,9 +1,16 @@
 """Network-free tests for FRED parsing and indicator calculations."""
 
+from datetime import date, datetime, timezone
+
 import pytest
 
 from app.services import macro_service
-from app.services.macro_service import MacroDataError, _parse_fed_funds_csv, _parse_fred_csv
+from app.services.macro_service import (
+    MacroDataError,
+    _observation_period_end,
+    _parse_fed_funds_csv,
+    _parse_fred_csv,
+)
 
 
 def test_parser_selects_latest_valid_fed_funds_observation() -> None:
@@ -181,3 +188,44 @@ def test_india_and_fx_series_keep_their_native_units(
     assert result["unit"] == expected_unit
     assert result["value"] == value
     assert "value_percent" not in result
+
+
+
+@pytest.mark.parametrize(
+    ("observation_date", "frequency", "expected_end"),
+    [
+        ("2026-09-01", "Monthly", date(2026, 9, 30)),
+        ("2026-04-01", "Quarterly", date(2026, 6, 30)),
+        ("2025-01-01", "Annual", date(2025, 12, 31)),
+        ("2026-10-16", "Daily", date(2026, 10, 16)),
+    ],
+)
+def test_freshness_uses_end_of_source_period(
+    observation_date: str,
+    frequency: str,
+    expected_end: date,
+) -> None:
+    assert _observation_period_end(observation_date, frequency) == expected_end
+
+
+def test_annual_inflation_observation_age_uses_year_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        macro_service,
+        "_fetch_fred_series",
+        lambda _series_id: (
+            [("2025-01-01", 2.4)],
+            "2026-07-07T00:00:00+00:00",
+        ),
+    )
+
+    result = macro_service.fetch_macro_indicator("india-cpi-inflation-annual")
+    expected_age = (
+        datetime.now(timezone.utc).date() - date(2025, 12, 31)
+    ).days
+
+    assert result["frequency"] == "Annual"
+    assert result["observation_date"] == "2025-01-01"
+    assert result["observation_age_days"] == expected_age
+    assert result["freshness_status"] == "fresh"
