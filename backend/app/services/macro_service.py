@@ -24,6 +24,7 @@ INDICATORS: dict[str, dict[str, str]] = {
         "unit": "percent",
         "source": "Board of Governors of the Federal Reserve System via FRED",
         "calculation": "Latest available FEDFUNDS observation.",
+        "max_age_days": "120",
     },
     "us-inflation": {
         "indicator": "U.S. CPI Inflation (year over year)",
@@ -31,6 +32,7 @@ INDICATORS: dict[str, dict[str, str]] = {
         "unit": "percent year over year",
         "source": "U.S. Bureau of Labor Statistics via FRED",
         "calculation": "Calculated as the 12-month percentage change in CPIAUCSL.",
+        "max_age_days": "100",
     },
     "us-unemployment": {
         "indicator": "U.S. Unemployment Rate",
@@ -38,6 +40,7 @@ INDICATORS: dict[str, dict[str, str]] = {
         "unit": "percent, seasonally adjusted",
         "source": "U.S. Bureau of Labor Statistics via FRED",
         "calculation": "Latest available UNRATE observation.",
+        "max_age_days": "100",
     },
 }
 
@@ -138,6 +141,16 @@ def fetch_macro_indicator(indicator_key: str) -> dict[str, str | float]:
             )
         value = round((latest_value / prior_year_value - 1) * 100, 2)
 
+    observation_day = datetime.strptime(observation_date, "%Y-%m-%d").date()
+    today = datetime.now(timezone.utc).date()
+    age_days = (today - observation_day).days
+    if age_days < 0:
+        raise MacroDataError(f"FRED returned a future observation date for {series_id}")
+
+    freshness_status = (
+        "fresh" if age_days <= int(config["max_age_days"]) else "stale"
+    )
+
     return {
         "indicator": config["indicator"],
         "series_id": series_id,
@@ -148,6 +161,8 @@ def fetch_macro_indicator(indicator_key: str) -> dict[str, str | float]:
         "source_url": f"https://fred.stlouisfed.org/series/{series_id}",
         "retrieved_at": retrieved_at,
         "calculation": config["calculation"],
+        "observation_age_days": age_days,
+        "freshness_status": freshness_status,
     }
 
 
