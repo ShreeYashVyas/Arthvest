@@ -21,6 +21,7 @@ This document describes the current Phase 1 data inputs. Source readings are obs
 | `fed-funds` | FEDFUNDS | Percent | Monthly | 120 days |
 | `us-inflation` | CPIAUCSL | Percent year over year (calculated) | Monthly | 100 days |
 | `us-unemployment` | UNRATE | Percent, seasonally adjusted | Monthly | 100 days |
+| `india-gdp-growth` | INDGDPRQPSMEI | Percent year over year | Quarterly | 240 days |
 | `india-policy-uncertainty` | INDEPUINDXM | Index | Monthly | 120 days |
 | `usd-inr` | DEXINUS | INR per USD | Daily, excluding non-publishing days | 7 days |
 | `india-reer` | CCRETT01INM661N | Index (2015=100) | Monthly | 100 days |
@@ -30,10 +31,10 @@ Series metadata and links are returned dynamically by `/api/macro/catalog`.
 ## Calculation rules
 
 - U.S. CPI inflation is calculated as the 12-month percentage change in `CPIAUCSL`, using the same observation month in the prior year.
-- The U.S. unemployment rate, effective federal funds rate, India policy-uncertainty index, INR/USD exchange rate and Indian REER are displayed from the latest non-missing observation.
+- The U.S. unemployment rate, effective federal funds rate, India GDP growth, India policy-uncertainty index, INR/USD exchange rate and Indian REER are displayed from the latest non-missing observation.
 - Historical CPI inflation points are calculated for each month where a matching observation from 12 months earlier is available.
 - Missing, invalid and non-finite observations are not silently converted to zero.
-- Freshness is measured from the source observation date, not the retrieval time. Thresholds are provisional operational checks, not statements about economic significance.
+- Freshness is measured from the source observation date, not the retrieval time. For quarterly GDP, the source date represents the quarter's observation period, so the threshold allows for the longer period and release lag. Thresholds are provisional operational checks, not statements about economic significance.
 - FRED observations may be revised. Arthvest caches each fetched series in-process for 15 minutes; this is not a persistent database.
 
 ## Provisional U.S. subscore
@@ -76,6 +77,7 @@ Exact prototype bands returned by the API:
 - Federal Funds Effective Rate: [FRED FEDFUNDS](https://fred.stlouisfed.org/series/FEDFUNDS)
 - U.S. CPI: [FRED CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL)
 - U.S. unemployment: [FRED UNRATE](https://fred.stlouisfed.org/series/UNRATE)
+- India real GDP growth: [FRED INDGDPRQPSMEI](https://fred.stlouisfed.org/series/INDGDPRQPSMEI)
 - India policy uncertainty: [FRED INDEPUINDXM](https://fred.stlouisfed.org/series/INDEPUINDXM)
 - Indian rupees per U.S. dollar: [FRED DEXINUS](https://fred.stlouisfed.org/series/DEXINUS)
 - India real effective exchange rate: [FRED CCRETT01INM661N](https://fred.stlouisfed.org/series/CCRETT01INM661N)
