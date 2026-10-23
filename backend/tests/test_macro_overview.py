@@ -101,6 +101,9 @@ def test_macro_catalog_describes_every_configured_indicator() -> None:
     assert set(catalog) == set(INDICATORS)
     assert catalog["usd-inr"]["unit"] == "INR per USD"
     assert catalog["india-gdp-growth"]["frequency"] == "Quarterly"
+    assert catalog["india-cpi-inflation-annual"]["frequency"] == "Annual"
+    assert catalog["india-cpi-inflation-annual"]["unit"] == "percent (annual)"
+    assert catalog["india-cpi-inflation-annual"]["freshness_threshold_days"] == 550
     assert all(item["source_url"].startswith("https://") for item in catalog.values())
 
 
