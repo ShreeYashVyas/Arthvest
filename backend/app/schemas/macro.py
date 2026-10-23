@@ -15,6 +15,7 @@ class MacroIndicatorResponse(BaseModel):
     series_id: str
     value: float = Field(allow_inf_nan=False)
     observation_date: str
+    frequency: str
     observation_age_days: int = Field(ge=0)
     freshness_status: Literal["fresh", "stale"]
     unit: str
@@ -113,6 +114,7 @@ class MacroHistoryResponse(BaseModel):
     indicator: str
     series_id: str
     unit: str
+    frequency: str
     source: str
     source_url: str
     calculation: str
