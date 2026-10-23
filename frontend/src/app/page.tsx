@@ -140,6 +140,36 @@ function Sparkline({
   );
 }
 
+function MacroDelta({
+  history,
+  unit,
+}: {
+  history: MacroHistory | null | undefined;
+  unit: string;
+}) {
+  if (!history || history.points.length < 2) return null;
+
+  const current = history.points[history.points.length - 1].value;
+  const previous = history.points[history.points.length - 2].value;
+  const delta = current - previous;
+  const unitLabel = unit.startsWith("percent")
+    ? "pp"
+    : unit.toLowerCase().startsWith("index")
+      ? "index pts"
+      : unit === "INR per USD"
+        ? "INR/USD"
+        : unit;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted">
+      <span>Change vs previous observation</span>
+      <span className="font-medium text-slate-300">
+        {delta > 0 ? "+" : ""}{delta.toFixed(2)} {unitLabel}
+      </span>
+    </div>
+  );
+}
+
 export default function Home() {
   const [serviceState, setServiceState] = useState<ServiceState>("checking");
   const [checkedAt, setCheckedAt] = useState<string>("—");
@@ -666,6 +696,7 @@ export default function Home() {
                         {item.data.calculation ? (
                           <p className="mt-3 text-[11px] leading-5 text-muted">{item.data.calculation}</p>
                         ) : null}
+                        <MacroDelta history={historyByKey[item.key]} unit={item.data.unit} />
                         {historyByKey[item.key] ? (
                           <Sparkline points={historyByKey[item.key]!.points} frequency={historyByKey[item.key]!.frequency} />
                         ) : (
