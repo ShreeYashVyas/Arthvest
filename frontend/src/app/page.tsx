@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchMacroHistory, fetchMacroOverview, fetchUSMacroScore, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type USMacroScore } from "@/lib/api";
+import { fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchUSMacroScore, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type USMacroScore } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -124,6 +124,8 @@ export default function Home() {
   const [historyByKey, setHistoryByKey] = useState<Record<string, MacroHistory | null>>({});
   const [macroLoading, setMacroLoading] = useState(true);
   const [macroError, setMacroError] = useState<string | null>(null);
+  const [macroQuality, setMacroQuality] = useState<MacroQuality | null>(null);
+  const [qualityError, setQualityError] = useState<string | null>(null);
   const [usScore, setUsScore] = useState<USMacroScore | null>(null);
   const [scoreLoading, setScoreLoading] = useState(true);
   const [scoreError, setScoreError] = useState<string | null>(null);
@@ -143,6 +145,20 @@ export default function Home() {
         setMacroOverview(data);
         setMacroError(null);
         setMacroLoading(false);
+
+        try {
+          const quality = await fetchMacroQuality(controller.signal);
+          if (active) {
+            setMacroQuality(quality);
+            setQualityError(null);
+          }
+        } catch (error: unknown) {
+          if (active) {
+            setQualityError(
+              error instanceof Error ? error.message : "Unable to load data quality.",
+            );
+          }
+        }
 
         const entries = await Promise.all(
           data.indicators.map(async (item) => {
@@ -455,6 +471,60 @@ export default function Home() {
               </div>
             )}
           </div>
+        </section>
+
+        <section aria-labelledby="data-quality-title" className="mt-6 rounded-2xl border border-line bg-panel/60 p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">Data integrity</div>
+              <h2 id="data-quality-title" className="mt-2 text-lg font-medium text-white">Source coverage & freshness</h2>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-muted">
+                Observation dates determine freshness. A successful retrieval alone does not mean a reading is current.
+              </p>
+            </div>
+            {macroQuality ? (
+              <span className={`rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] ${
+                macroQuality.quality_status === "good"
+                  ? "border-accent/25 bg-accent/5 text-accent"
+                  : "border-amber-300/25 bg-amber-300/5 text-amber-200"
+              }`}>
+                {macroQuality.quality_status}
+              </span>
+            ) : (
+              <span className="rounded-full border border-line px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-muted">
+                {qualityError ? "quality unavailable" : "calculating"}
+              </span>
+            )}
+          </div>
+
+          {macroQuality ? (
+            <>
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { label: "Coverage", value: macroQuality.coverage_percent.toFixed(0) + "%" },
+                  { label: "Fresh", value: String(macroQuality.fresh_count) },
+                  { label: "Stale", value: String(macroQuality.stale_count) },
+                  { label: "Unavailable", value: String(macroQuality.unavailable_count) },
+                ].map((metric) => (
+                  <div key={metric.label} className="rounded-xl border border-line bg-[#0B1017] p-3">
+                    <div className="text-[10px] text-muted">{metric.label}</div>
+                    <div className="mt-2 text-xl font-light text-white">{metric.value}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-line">
+                <div
+                  className={`h-full rounded-full ${macroQuality.quality_status === "good" ? "bg-accent" : "bg-amber-300"}`}
+                  style={{ width: macroQuality.coverage_percent + "%" }}
+                />
+              </div>
+              <p className="mt-3 text-xs leading-5 text-muted">{macroQuality.note}</p>
+            </>
+          ) : (
+            <p role="status" className="mt-4 text-xs text-muted">
+              {qualityError ?? "Calculating quality from validated observations…"}
+            </p>
+          )}
         </section>
 
         <section
