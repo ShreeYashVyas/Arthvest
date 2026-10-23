@@ -175,3 +175,65 @@ def fetch_macro_indicator(indicator_key: str) -> dict[str, str | float]:
 def fetch_fed_funds_rate() -> dict[str, str | float]:
     """Compatibility wrapper for the original FEDFUNDS endpoint."""
     return fetch_macro_indicator("fed-funds")
+
+
+
+def fetch_macro_history(indicator_key: str, limit: int = 12) -> dict[str, object]:
+    """Return the latest historical points for an indicator.
+
+    The CPI index is converted into year-over-year inflation for each month with
+    a matching observation from 12 months earlier. Other indicators expose the
+    source series directly.
+    """
+    if not 1 <= limit <= 60:
+        raise MacroDataError("History limit must be between 1 and 60")
+
+    config = INDICATORS.get(indicator_key)
+    if config is None:
+        raise MacroDataError(f"Unsupported macro indicator: {indicator_key}")
+
+    series_id = config["series_id"]
+    observations, retrieved_at = _fetch_fred_series(series_id)
+    if indicator_key == "us-inflation":
+        value_by_date = {date_string: value for date_string, value in observations}
+        derived_points: list[dict[str, str | float]] = []
+        for date_string, current_value in observations:
+            current_date = datetime.strptime(date_string, "%Y-%m-%d")
+            try:
+                prior_date_string = current_date.replace(
+                    year=current_date.year - 1
+                ).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+            prior_value = value_by_date.get(prior_date_string)
+            if prior_value is None or prior_value == 0:
+                continue
+            derived_points.append(
+                {
+                    "observation_date": date_string,
+                    "value": round((current_value / prior_value - 1) * 100, 2),
+                }
+            )
+        points = derived_points[-limit:]
+        unit = config["unit"]
+    else:
+        points = [
+            {"observation_date": date_string, "value": value}
+            for date_string, value in observations[-limit:]
+        ]
+        unit = config["unit"]
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "key": indicator_key,
+        "indicator": config["indicator"],
+        "series_id": series_id,
+        "unit": unit,
+        "source": config["source"],
+        "source_url": f"https://fred.stlouisfed.org/series/{series_id}",
+        "calculation": config["calculation"],
+        "requested_limit": limit,
+        "returned_count": len(points),
+        "points": points,
+        "retrieved_at": retrieved_at,
+    }
