@@ -119,3 +119,32 @@ class MacroHistoryResponse(BaseModel):
     requested_limit: int = Field(ge=1, le=60)
     returned_count: int = Field(ge=0)
     points: list[MacroHistoryPoint]
+
+
+class MacroScoreComponent(BaseModel):
+    """One input and its contribution to the provisional conditions score."""
+
+    key: str
+    indicator: str
+    status: Literal["available", "stale", "unavailable"]
+    value_percent: float | None = Field(default=None, allow_inf_nan=False)
+    observation_date: str | None = None
+    freshness_status: Literal["fresh", "stale"] | None = None
+    component_score: float | None = Field(default=None, ge=0, le=100)
+    weight: float = Field(ge=0, le=1)
+    weighted_points: float | None = Field(default=None, ge=0, le=100)
+
+
+class USMacroScoreResponse(BaseModel):
+    """Provisional score for U.S. macro conditions, not the full Arthvest regime."""
+
+    generated_at: datetime
+    available: bool
+    score: float | None = Field(default=None, ge=0, le=100)
+    label: Literal["supportive", "mixed", "pressured", "insufficient-data"]
+    provisional: bool = True
+    weights: dict[str, float]
+    components: list[MacroScoreComponent]
+    methodology: str
+    limitations: list[str]
+    blockers: list[str]
