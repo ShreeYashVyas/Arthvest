@@ -36,7 +36,9 @@ Series metadata and links are returned dynamically by `/api/macro/catalog`.
 - India CPI inflation in this catalog is an annual World Bank series; it must not be mistaken for India's monthly CPI release.
 - Historical CPI inflation points are calculated for each month where a matching observation from 12 months earlier is available.
 - Missing, invalid and non-finite observations are not silently converted to zero.
-- Freshness is measured from the source observation date, not the retrieval time. For quarterly GDP, the source date represents the quarter's observation period, so the threshold allows for the longer period and release lag. Thresholds are provisional operational checks, not statements about economic significance.
+- Freshness is measured from the end of the represented observation period, not the retrieval time: month-end for monthly data, quarter-end for quarterly data, year-end for annual data, and the observation date for daily data. The original source observation date is preserved in the API.
+- The annual India CPI source uses a year-start timestamp for an annual observation; its freshness age is therefore computed from that year's end. The 550-day threshold allows for annual release timing, but remains a provisional operational check rather than a statement about economic significance.
+- Freshness thresholds are provisional operational checks, not statements about economic significance.
 - FRED observations may be revised. Arthvest caches each fetched series in-process for 15 minutes; this is not a persistent database.
 
 ## Provisional U.S. subscore
