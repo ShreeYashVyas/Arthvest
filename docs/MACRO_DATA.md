@@ -49,6 +49,10 @@ The public FRED series pages below were checked on **2026-10-23** to confirm tha
 | `india-reer` | [CCRETT01INM661N](https://fred.stlouisfed.org/series/CCRETT01INM661N) | September 2026: 92.37 index points (base 2015=100) |
 
 
+## Archived historical analytics
+
+`GET /api/macro/analytics/{indicator_key}?limit=12` summarizes a window of 2–60 archived display observations. Output includes oldest/latest value, absolute change in the displayed unit (percentage points for percentage-based indicators), relative mathematical change, direction, mean, minimum, maximum, and population standard deviation. The direction labels only describe whether values rose, fell, or stayed flat; they do not say whether a move is economically good or bad. For `us-inflation`, archived raw CPI index levels are converted into year-over-year inflation points before analysis. The endpoint requires a reachable configured database and returns no live-source fallback: that makes it clear the analysis is based on saved history, not just today's upstream response. The result is descriptive, not a forecast or validated regime model.
+
 ## Calculation rules
 
 - U.S. CPI inflation is calculated as the 12-month percentage change in `CPIAUCSL`, using the same observation month in the prior year.

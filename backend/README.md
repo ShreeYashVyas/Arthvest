@@ -37,3 +37,5 @@ New endpoints:
 - `GET /api/macro/source-checks?limit=24` — recent source fetch outcomes
 
 The archive stores source-native FRED values. For example, `CPIAUCSL` is the CPI index, not the derived year-over-year inflation rate. Persistence errors are logged but do not interrupt live feed delivery; check the storage endpoint to verify the database is available.
+
+- `GET /api/macro/analytics/{indicator_key}?limit=12` — descriptive historical trend and distribution statistics (requires `DATABASE_URL` and archived observations)

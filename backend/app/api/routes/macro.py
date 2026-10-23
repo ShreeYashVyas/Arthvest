@@ -8,6 +8,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 
 from app.services import observation_store
+from app.services.historical_analytics import (
+    HistoricalAnalyticsError,
+    get_archived_indicator_analytics,
+)
 from app.schemas.macro import (
     MacroCatalogResponse,
     MacroHistoryResponse,
@@ -298,6 +302,34 @@ def get_observation_revisions(
         "count": len(revisions),
         "revisions": revisions,
     }
+
+
+@router.get(
+    "/analytics/{indicator_key}",
+    summary="Summarize historical trends in archived macro observations",
+)
+def get_historical_analytics(
+    indicator_key: str,
+    limit: int = Query(default=12, ge=2, le=60),
+) -> dict[str, object]:
+    """Return descriptive history statistics; this is not a validated regime score."""
+    if indicator_key not in INDICATORS:
+        raise HTTPException(status_code=404, detail="Unsupported macro indicator.")
+    _require_available_storage()
+    try:
+        return get_archived_indicator_analytics(indicator_key, limit=limit)
+    except HistoricalAnalyticsError as exc:
+        logger.warning("Archived analytics unavailable for %s: %s", indicator_key, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Archived observations could not be analyzed.",
+        ) from exc
+    except Exception as exc:
+        logger.warning("Could not analyze archived observations for %s: %s", indicator_key, exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Historical analytics are temporarily unavailable.",
+        ) from exc
 
 
 
