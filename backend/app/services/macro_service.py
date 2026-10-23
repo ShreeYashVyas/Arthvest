@@ -48,6 +48,36 @@ INDICATORS: dict[str, dict[str, str]] = {
         "calculation": "Latest available UNRATE observation.",
         "max_age_days": "100",
     },
+    "india-policy-uncertainty": {
+        "indicator": "India Economic Policy Uncertainty Index",
+        "description": "Monthly index tracking economic policy uncertainty in India.",
+        "frequency": "Monthly",
+        "series_id": "INDEPUINDXM",
+        "unit": "index",
+        "source": "Baker, Bloom and Davis via FRED",
+        "calculation": "Latest published index observation; interpret relative to its own history, not as a percentage.",
+        "max_age_days": "120",
+    },
+    "usd-inr": {
+        "indicator": "Indian Rupees per U.S. Dollar",
+        "description": "Daily noon buying rate for Indian rupees to one U.S. dollar.",
+        "frequency": "Daily, except non-publishing days",
+        "series_id": "DEXINUS",
+        "unit": "INR per USD",
+        "source": "Board of Governors of the Federal Reserve System via FRED",
+        "calculation": "Latest available spot exchange-rate observation. A higher value means more rupees per U.S. dollar.",
+        "max_age_days": "7",
+    },
+    "india-reer": {
+        "indicator": "India Real Effective Exchange Rate",
+        "description": "CPI-based real effective exchange-rate index for India.",
+        "frequency": "Monthly",
+        "series_id": "CCRETT01INM661N",
+        "unit": "index (2015=100)",
+        "source": "Organisation for Economic Co-operation and Development (OECD) via FRED",
+        "calculation": "Latest published index observation; interpret relative to its base and history.",
+        "max_age_days": "100",
+    },
 }
 
 
@@ -160,7 +190,7 @@ def fetch_macro_indicator(indicator_key: str) -> dict[str, str | float]:
     return {
         "indicator": config["indicator"],
         "series_id": series_id,
-        "value_percent": value,
+        "value": value,
         "observation_date": observation_date,
         "unit": config["unit"],
         "source": config["source"],
