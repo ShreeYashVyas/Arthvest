@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchMacroOverview, type MacroOverview } from "@/lib/api";
+import { fetchMacroHistory, fetchMacroOverview, type MacroHistory, type MacroHistoryPoint, type MacroOverview } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -68,11 +68,60 @@ function formatTime(date: Date): string {
   });
 }
 
+function Sparkline({ points }: { points: MacroHistoryPoint[] }) {
+  if (points.length < 2) {
+    return <p className="py-3 text-[10px] text-muted">Not enough historical points to chart.</p>;
+  }
+
+  const values = points.map((point) => point.value);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const span = maxValue - minValue || 1;
+  const coordinates = points
+    .map((point, index) => {
+      const x = (index / (points.length - 1)) * 100;
+      const y = 30 - ((point.value - minValue) / span) * 24;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="mt-4 rounded-lg border border-line bg-panel/50 px-3 py-2">
+      <div className="mb-2 flex items-center justify-between gap-2 text-[10px] text-muted">
+        <span>Recent history</span>
+        <span>{points.length} observations</span>
+      </div>
+      <svg
+        viewBox="0 0 100 36"
+        role="img"
+        aria-label={`Historical trend across ${points.length} observations`}
+        className="h-10 w-full overflow-visible text-accent"
+        preserveAspectRatio="none"
+      >
+        <polyline
+          points={coordinates}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      <div className="mt-1 flex justify-between text-[9px] text-muted">
+        <span>{points[0].observation_date}</span>
+        <span>{points[points.length - 1].observation_date}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [serviceState, setServiceState] = useState<ServiceState>("checking");
   const [checkedAt, setCheckedAt] = useState<string>("—");
   const [retry, setRetry] = useState(0);
   const [macroOverview, setMacroOverview] = useState<MacroOverview | null>(null);
+  const [historyByKey, setHistoryByKey] = useState<Record<string, MacroHistory | null>>({});
   const [macroLoading, setMacroLoading] = useState(true);
   const [macroError, setMacroError] = useState<string | null>(null);
 
@@ -86,10 +135,24 @@ export default function Home() {
     ).replace(/\/$/, "");
 
     fetchMacroOverview(controller.signal)
-      .then((data) => {
+      .then(async (data) => {
         if (!active) return;
         setMacroOverview(data);
         setMacroError(null);
+        setMacroLoading(false);
+
+        const entries = await Promise.all(
+          data.indicators.map(async (item) => {
+            if (item.status !== "available") return [item.key, null] as const;
+            try {
+              const history = await fetchMacroHistory(item.key, 12, controller.signal);
+              return [item.key, history] as const;
+            } catch {
+              return [item.key, null] as const;
+            }
+          }),
+        );
+        if (active) setHistoryByKey(Object.fromEntries(entries));
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -350,6 +413,13 @@ export default function Home() {
                         {item.data.calculation ? (
                           <p className="mt-3 text-[11px] leading-5 text-muted">{item.data.calculation}</p>
                         ) : null}
+                        {historyByKey[item.key] ? (
+                          <Sparkline points={historyByKey[item.key]!.points} />
+                        ) : (
+                          <div className="mt-4 rounded-lg border border-line/60 px-3 py-2 text-[10px] text-muted">
+                            Historical trend currently unavailable.
+                          </div>
+                        )}
                         <div className="mt-auto pt-4">
                           <a
                             href={item.data.source_url}
