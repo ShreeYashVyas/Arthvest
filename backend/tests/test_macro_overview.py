@@ -147,3 +147,92 @@ def test_macro_quality_separates_stale_from_unavailable(monkeypatch) -> None:
     items = {item["key"]: item for item in payload["indicators"]}
     assert items["usd-inr"]["freshness_status"] == "stale"
     assert items["us-inflation"]["status"] == "unavailable"
+
+
+
+def test_history_route_returns_typed_historical_points(monkeypatch) -> None:
+    from app.services import macro_service
+
+    history_payload = {
+        "generated_at": "2026-10-23T09:00:00+00:00",
+        "retrieved_at": "2026-10-23T08:55:00+00:00",
+        "key": "fed-funds",
+        "indicator": "Federal Funds Effective Rate",
+        "series_id": "FEDFUNDS",
+        "unit": "percent",
+        "source": "FRED",
+        "source_url": "https://fred.stlouisfed.org/series/FEDFUNDS",
+        "calculation": "Latest observations.",
+        "requested_limit": 2,
+        "returned_count": 2,
+        "points": [
+            {"observation_date": "2026-08-01", "value": 3.8},
+            {"observation_date": "2026-09-01", "value": 3.7},
+        ],
+    }
+    monkeypatch.setattr(
+        macro_service,
+        "fetch_macro_history",
+        lambda _key, limit=12: {**history_payload, "requested_limit": limit},
+    )
+
+    response = client.get("/api/macro/history/fed-funds?limit=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["returned_count"] == 2
+    assert payload["points"][-1]["value"] == 3.7
+
+
+def test_history_route_rejects_unsupported_indicator(monkeypatch) -> None:
+    from app.services import macro_service
+
+    def fake_history(key: str, limit: int = 12):
+        raise MacroDataError(f"Unsupported macro indicator: {key}")
+
+    monkeypatch.setattr(macro_service, "fetch_macro_history", fake_history)
+
+    response = client.get("/api/macro/history/not-supported")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Unsupported macro indicator."
+
+
+def test_score_route_returns_provisional_score_when_inputs_are_fresh(monkeypatch) -> None:
+    def fake_fetch(key: str) -> dict[str, str | float]:
+        payload = _sample_payload(key)
+        if key == "fed-funds":
+            payload["value"] = 2.0
+        elif key == "us-inflation":
+            payload["value"] = 3.2
+        elif key == "us-unemployment":
+            payload["value"] = 5.0
+        return payload
+
+    monkeypatch.setattr(macro_routes, "fetch_macro_indicator", fake_fetch)
+
+    response = client.get("/api/macro/score/us-conditions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["score"] == 67.0
+    assert payload["provisional"] is True
+    assert len(payload["components"]) == 3
+
+
+def test_score_route_withholds_result_when_source_is_unavailable(monkeypatch) -> None:
+    def fake_fetch(key: str) -> dict[str, str | float]:
+        if key == "us-inflation":
+            raise MacroDataError("upstream unavailable")
+        return _sample_payload(key)
+
+    monkeypatch.setattr(macro_routes, "fetch_macro_indicator", fake_fetch)
+
+    response = client.get("/api/macro/score/us-conditions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is False
+    assert payload["score"] is None
+    assert payload["label"] == "insufficient-data"
