@@ -68,3 +68,33 @@ def test_inflation_is_calculated_from_cpi_year_over_year(monkeypatch: pytest.Mon
 def test_unknown_indicator_key_is_rejected() -> None:
     with pytest.raises(MacroDataError, match="Unsupported"):
         macro_service.fetch_macro_indicator("not-a-real-indicator")
+
+
+def test_old_observation_is_marked_stale(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        macro_service,
+        "_fetch_fred_series",
+        lambda _series_id: (
+            [("2010-01-01", 1.0)],
+            "2026-10-23T00:00:00+00:00",
+        ),
+    )
+
+    result = macro_service.fetch_macro_indicator("fed-funds")
+
+    assert result["freshness_status"] == "stale"
+    assert result["observation_age_days"] > 120
+
+
+def test_future_observation_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        macro_service,
+        "_fetch_fred_series",
+        lambda _series_id: (
+            [("2099-01-01", 4.0)],
+            "2026-10-23T00:00:00+00:00",
+        ),
+    )
+
+    with pytest.raises(MacroDataError, match="future observation"):
+        macro_service.fetch_macro_indicator("fed-funds")
