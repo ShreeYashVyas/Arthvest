@@ -6,7 +6,7 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 
 ## Current Phase 1 capabilities
 
-- Next.js dashboard with API connection state, indicator cards, historical sparklines, normalized cross-indicator comparisons, and an archive-health monitor for database readiness and source-check history.
+- Next.js dashboard with API connection state, indicator cards, historical sparklines, normalized cross-indicator comparisons, archive health, and an upstream revision-audit table.
 - FastAPI endpoints for health, a macro-indicator catalog, a best-effort overview, history, data quality, and a provisional U.S. score.
 - U.S. indicators: Federal Funds Effective Rate, CPI inflation (calculated year over year), and unemployment rate.
 - India-related indicators: quarterly real GDP growth, annual consumer-price inflation, Economic Policy Uncertainty Index, INR per USD exchange rate, and real effective exchange rate.
@@ -148,3 +148,8 @@ The dashboard's Archive Health panel reads `GET /api/macro/storage` and, when pe
 ## Scheduled archive ingestion
 
 The **Archive Macro Observations** GitHub Actions workflow can be run manually or on its daily schedule (02:00 UTC / 07:30 IST). It fetches all eight configured macro indicators and verifies that the database source-check count increased, so a fetch-only run is not reported as a successful archive write. Configure a repository Actions secret named `DATABASE_URL` before enabling it. This must be set separately from any deployment environment secret; keep the connection string private. The workflow fails clearly when the secret is missing, the database is unreachable, or expected write records are not confirmed.
+
+
+## Source revision audit
+
+The dashboard's Source Revision Audit panel reads `GET /api/macro/revisions/{indicator_key}?limit=20`. It shows the observation date whose stored value changed, the previous and revised source-native values, their difference, and when Arthvest detected the change. A first-time archive import is not recorded as a revision; the same observation date must be fetched again with a changed upstream value.

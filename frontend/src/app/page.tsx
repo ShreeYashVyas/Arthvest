@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchHistoricalAnalytics, fetchMacroCatalog, fetchMacroComparison, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchMacroSourceChecks, fetchMacroStorageStatus, fetchUSMacroScore, type HistoricalAnalytics, type MacroCatalog, type MacroComparison, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type MacroSourceChecks, type MacroStorageStatus, type USMacroScore } from "@/lib/api";
+import { fetchHistoricalAnalytics, fetchMacroCatalog, fetchMacroComparison, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchMacroRevisions, fetchMacroSourceChecks, fetchMacroStorageStatus, fetchUSMacroScore, type HistoricalAnalytics, type MacroCatalog, type MacroComparison, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type MacroRevisions, type MacroSourceChecks, type MacroStorageStatus, type USMacroScore } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -308,6 +308,11 @@ export default function Home() {
   const [archiveLoading, setArchiveLoading] = useState(true);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [archiveRetry, setArchiveRetry] = useState(0);
+  const [revisionKey, setRevisionKey] = useState("fed-funds");
+  const [revisionData, setRevisionData] = useState<MacroRevisions | null>(null);
+  const [revisionLoading, setRevisionLoading] = useState(true);
+  const [revisionError, setRevisionError] = useState<string | null>(null);
+  const [revisionRetry, setRevisionRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -504,6 +509,31 @@ export default function Home() {
       controller.abort();
     };
   }, [archiveRetry]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setRevisionLoading(true);
+    setRevisionError(null);
+    setRevisionData(null);
+
+    fetchMacroRevisions(revisionKey, 20, controller.signal)
+      .then((result) => {
+        setRevisionData(result);
+        setRevisionError(null);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setRevisionData(null);
+        setRevisionError(
+          error instanceof Error ? error.message : "Unable to load source revision history.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRevisionLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [revisionKey, revisionRetry]);
 
   return (
     <main className="min-h-screen px-4 pb-10 pt-5 sm:px-7 lg:px-10">
@@ -788,6 +818,109 @@ export default function Home() {
               </>
             ) : (
               <p className="text-sm text-muted">No archive status was returned.</p>
+            )}
+          </div>
+        </section>
+
+
+        <section
+          aria-labelledby="revision-audit-title"
+          className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/70"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">Data integrity / audit trail</div>
+              <h2 id="revision-audit-title" className="mt-2 text-xl font-medium text-white">
+                Source revision audit
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                See when an upstream source changes a value for an observation date already stored in Arthvest. First-time imports are not revisions.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-2 text-[10px] uppercase tracking-[0.12em] text-muted">
+                Indicator
+                <select
+                  aria-label="Select indicator for revision audit"
+                  value={revisionKey}
+                  onChange={(event) => setRevisionKey(event.target.value)}
+                  className="min-w-[220px] rounded-lg border border-line bg-[#0B1017] px-3 py-2.5 text-xs normal-case tracking-normal text-slate-100 outline-none transition focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
+                >
+                  {comparisonOptions.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setRevisionRetry((value) => value + 1)}
+                className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2.5 text-xs text-slate-200 transition hover:border-accent/50 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
+              >
+                <RefreshCw size={13} /> Refresh
+              </button>
+            </div>
+          </div>
+          <div className="p-5 sm:p-7">
+            {revisionLoading ? (
+              <div role="status" className="flex items-center gap-3 py-5 text-sm text-muted">
+                <RefreshCw size={16} className="animate-spin" /> Loading revision audit…
+              </div>
+            ) : revisionError ? (
+              <div role="status" className="rounded-xl border border-amber-300/20 bg-amber-300/[0.03] p-4">
+                <div className="text-sm font-medium text-amber-100">Revision history unavailable</div>
+                <p className="mt-2 text-xs leading-5 text-muted">{revisionError}</p>
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  Revision history requires a reachable DATABASE_URL and at least two fetches of a stored observation when its upstream value changes.
+                </p>
+              </div>
+            ) : revisionData && revisionData.revisions.length > 0 ? (
+              <>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-white">{revisionData.series_id} · detected revisions</div>
+                  <div className="text-[10px] text-muted">Showing {revisionData.revisions.length} most recent records</div>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-line">
+                  <table className="w-full min-w-[760px] border-collapse text-left">
+                    <thead className="bg-[#0B1017] text-[10px] uppercase tracking-[0.1em] text-muted">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Observation date</th>
+                        <th className="px-4 py-3 font-medium">Previous value</th>
+                        <th className="px-4 py-3 font-medium">Revised value</th>
+                        <th className="px-4 py-3 font-medium">Difference</th>
+                        <th className="px-4 py-3 font-medium">Detected at</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {revisionData.revisions.map((revision, index) => {
+                        const delta = revision.revised_value - revision.previous_value;
+                        return (
+                          <tr key={revision.series_id + "-" + revision.observation_date + "-" + revision.detected_at + "-" + index} className="text-xs text-slate-300">
+                            <td className="px-4 py-3">{revision.observation_date}</td>
+                            <td className="px-4 py-3 tabular-nums">{revision.previous_value.toLocaleString("en-US", { maximumFractionDigits: 5 })}</td>
+                            <td className="px-4 py-3 tabular-nums">{revision.revised_value.toLocaleString("en-US", { maximumFractionDigits: 5 })}</td>
+                            <td className={"px-4 py-3 tabular-nums " + (delta === 0 ? "text-muted" : "text-amber-200")}>
+                              {delta > 0 ? "+" : ""}{delta.toLocaleString("en-US", { maximumFractionDigits: 5 })}
+                            </td>
+                            <td className="px-4 py-3 text-muted">
+                              {new Date(revision.detected_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-3 text-[10px] leading-5 text-muted">
+                  Values are source-native. A detected revision records the difference between the previously retained value and the value observed during a later fetch.
+                </p>
+              </>
+            ) : (
+              <div className="rounded-xl border border-line bg-[#0B1017] p-5">
+                <div className="text-sm font-medium text-white">No revisions detected for this series</div>
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  That means no changed value has been recorded in the retained fetch history for this indicator. A newly created archive may have no revision history yet.
+                </p>
+              </div>
             )}
           </div>
         </section>

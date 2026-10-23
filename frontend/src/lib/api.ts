@@ -794,3 +794,82 @@ export async function fetchMacroSourceChecks(
   }
   return payload;
 }
+
+
+export type MacroObservationRevision = {
+  series_id: string;
+  observation_date: string;
+  previous_value: number;
+  revised_value: number;
+  detected_at: string;
+  retrieved_at: string;
+};
+
+export type MacroRevisions = {
+  key: string;
+  series_id: string;
+  count: number;
+  revisions: MacroObservationRevision[];
+};
+
+function isMacroRevisions(value: unknown): value is MacroRevisions {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  if (
+    typeof data.key !== "string" ||
+    typeof data.series_id !== "string" ||
+    typeof data.count !== "number" ||
+    !Number.isInteger(data.count) ||
+    !Array.isArray(data.revisions)
+  ) return false;
+
+  return data.revisions.every((rawRevision: unknown) => {
+    if (typeof rawRevision !== "object" || rawRevision === null) return false;
+    const revision = rawRevision as Record<string, unknown>;
+    return typeof revision.series_id === "string" &&
+      typeof revision.observation_date === "string" &&
+      typeof revision.previous_value === "number" && Number.isFinite(revision.previous_value) &&
+      typeof revision.revised_value === "number" && Number.isFinite(revision.revised_value) &&
+      typeof revision.detected_at === "string" &&
+      typeof revision.retrieved_at === "string";
+  });
+}
+
+export async function fetchMacroRevisions(
+  key: string,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<MacroRevisions> {
+  const allowedKeys = [
+    "fed-funds",
+    "us-inflation",
+    "us-unemployment",
+    "india-gdp-growth",
+    "india-cpi-inflation-annual",
+    "india-policy-uncertainty",
+    "usd-inr",
+    "india-reer",
+  ];
+  if (!allowedKeys.includes(key)) {
+    throw new Error("Unsupported macro revision key.");
+  }
+
+  const boundedLimit = Math.min(100, Math.max(1, Math.trunc(limit)));
+  const response = await fetch(
+    API_BASE_URL + "/api/macro/revisions/" + encodeURIComponent(key) +
+      "?limit=" + boundedLimit,
+    { cache: "no-store", signal },
+  );
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = typeof payload === "object" && payload !== null &&
+      "detail" in payload && typeof (payload as { detail?: unknown }).detail === "string"
+      ? (payload as { detail: string }).detail
+      : null;
+    throw new Error(detail ?? "Macro revision history is temporarily unavailable.");
+  }
+  if (!isMacroRevisions(payload)) {
+    throw new Error("Macro revision API returned an unexpected response format.");
+  }
+  return payload;
+}
