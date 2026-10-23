@@ -102,7 +102,7 @@ def calculate_us_conditions_score(
             continue
 
         try:
-            value = float(data["value_percent"])
+            value = float(data["value"])
         except (KeyError, TypeError, ValueError):
             value = math.nan
 
