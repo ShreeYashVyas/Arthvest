@@ -109,7 +109,11 @@ def calculate_us_conditions_score(
     for key, weight in SCORE_WEIGHTS.items():
         data = inputs.get(key)
         if data is None:
-            blockers.append(f"{SCORE_NAMES[key]} is unavailable.")
+            reason = errors.get(key)
+            blocker = f"{SCORE_NAMES[key]} is unavailable."
+            if reason:
+                blocker = f"{blocker} {reason}"
+            blockers.append(blocker)
             components.append(
                 {
                     "key": key,
