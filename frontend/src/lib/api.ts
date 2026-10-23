@@ -328,3 +328,70 @@ export async function fetchMacroQuality(
   }
   return payload;
 }
+
+
+export type MacroCatalogItem = {
+  key: string;
+  indicator: string;
+  description: string;
+  series_id: string;
+  frequency: string;
+  unit: string;
+  source: string;
+  source_url: string;
+  calculation: string;
+  freshness_threshold_days: number;
+};
+
+export type MacroCatalog = {
+  generated_at: string;
+  total_count: number;
+  indicators: MacroCatalogItem[];
+};
+
+function isMacroCatalog(value: unknown): value is MacroCatalog {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  if (
+    typeof data.generated_at !== "string" ||
+    typeof data.total_count !== "number" ||
+    !Array.isArray(data.indicators)
+  ) {
+    return false;
+  }
+
+  return data.indicators.every((item: unknown) => {
+    if (typeof item !== "object" || item === null) return false;
+    const entry = item as Record<string, unknown>;
+    return (
+      typeof entry.key === "string" &&
+      typeof entry.indicator === "string" &&
+      typeof entry.description === "string" &&
+      typeof entry.series_id === "string" &&
+      typeof entry.frequency === "string" &&
+      typeof entry.unit === "string" &&
+      typeof entry.source === "string" &&
+      typeof entry.source_url === "string" &&
+      typeof entry.calculation === "string" &&
+      typeof entry.freshness_threshold_days === "number" &&
+      Number.isInteger(entry.freshness_threshold_days)
+    );
+  });
+}
+
+export async function fetchMacroCatalog(
+  signal?: AbortSignal,
+): Promise<MacroCatalog> {
+  const response = await fetch(API_BASE_URL + "/api/macro/catalog", {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error("The macro indicator catalog is temporarily unavailable.");
+  }
+  const payload: unknown = await response.json();
+  if (!isMacroCatalog(payload)) {
+    throw new Error("Macro catalog API returned an unexpected response format.");
+  }
+  return payload;
+}
