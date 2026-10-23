@@ -70,3 +70,28 @@ class MacroOverviewResponse(BaseModel):
     available_count: int = Field(ge=0)
     total_count: int = Field(ge=0)
     indicators: list[MacroOverviewItem]
+
+
+class MacroQualityItem(BaseModel):
+    """Quality summary for one configured indicator."""
+
+    key: str
+    status: Literal["available", "unavailable"]
+    freshness_status: Literal["fresh", "stale"] | None = None
+    observation_age_days: int | None = Field(default=None, ge=0)
+    issue: str | None = None
+
+
+class MacroQualityResponse(BaseModel):
+    """Compact, transparent view of the current data quality state."""
+
+    generated_at: datetime
+    total_count: int = Field(ge=0)
+    available_count: int = Field(ge=0)
+    unavailable_count: int = Field(ge=0)
+    fresh_count: int = Field(ge=0)
+    stale_count: int = Field(ge=0)
+    coverage_percent: float = Field(ge=0, le=100)
+    quality_status: Literal["good", "partial", "unavailable"]
+    note: str
+    indicators: list[MacroQualityItem]
