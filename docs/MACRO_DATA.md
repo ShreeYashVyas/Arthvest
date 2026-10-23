@@ -22,7 +22,7 @@ This document describes the current Phase 1 data inputs. Source readings are obs
 | `us-inflation` | CPIAUCSL | Percent year over year (calculated) | Monthly | 100 days |
 | `us-unemployment` | UNRATE | Percent, seasonally adjusted | Monthly | 100 days |
 | `india-gdp-growth` | INDGDPRQPSMEI | Percent year over year | Quarterly | 240 days |
-| `india-cpi-inflation-annual` | FPCPITOTLZGIND | Percent (annual) | Annual | 800 days |
+| `india-cpi-inflation-annual` | FPCPITOTLZGIND | Percent (annual) | Annual | 550 days |
 | `india-policy-uncertainty` | INDEPUINDXM | Index | Monthly | 120 days |
 | `usd-inr` | DEXINUS | INR per USD | Daily, excluding non-publishing days | 7 days |
 | `india-reer` | CCRETT01INM661N | Index (2015=100) | Monthly | 100 days |
@@ -36,7 +36,7 @@ Series metadata and links are returned dynamically by `/api/macro/catalog`.
 - India CPI inflation in this catalog is an annual World Bank series; it must not be mistaken for India's monthly CPI release.
 - Historical CPI inflation points are calculated for each month where a matching observation from 12 months earlier is available.
 - Missing, invalid and non-finite observations are not silently converted to zero.
-- Freshness is measured from the end of the represented observation period, not the retrieval time: month-end for monthly data, quarter-end for quarterly data, year-end for annual data, and the observation date for daily data. The original source observation date is preserved in the API.
+- Freshness is measured from the end of the represented observation period, not the retrieval time: month-end for monthly data, quarter-end for quarterly data, year-end for annual data, and the observation date for daily data. The original source observation date is preserved in the API. When a series publishes a timestamp for the current period before that period ends, its period-age is clamped to zero rather than incorrectly rejecting it as a future observation; source dates themselves must not be in the future.
 - The annual India CPI source uses a year-start timestamp for an annual observation; its freshness age is therefore computed from that year's end. The 550-day threshold allows for annual release timing, but remains a provisional operational check rather than a statement about economic significance.
 - Freshness thresholds are provisional operational checks, not statements about economic significance.
 - FRED observations may be revised. Arthvest caches each fetched series in-process for 15 minutes; this is not a persistent database.
