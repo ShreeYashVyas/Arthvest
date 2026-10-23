@@ -12,6 +12,10 @@ from app.services.historical_analytics import (
     HistoricalAnalyticsError,
     get_archived_indicator_analytics,
 )
+from app.services.macro_comparison import (
+    MacroComparisonError,
+    get_archived_macro_comparison,
+)
 from app.schemas.macro import (
     MacroCatalogResponse,
     MacroHistoryResponse,
@@ -331,6 +335,38 @@ def get_historical_analytics(
             detail="Historical analytics are temporarily unavailable.",
         ) from exc
 
+
+
+
+@router.get(
+    "/compare",
+    summary="Compare normalized historical trends across archived macro indicators",
+)
+def compare_macro_indicators(
+    indicators: str = Query(..., description="Comma-separated list of 2 to 5 indicator keys"),
+    years: int = Query(default=5, ge=1, le=10),
+) -> dict[str, object]:
+    """Compare independent relative trends without blending unlike raw units."""
+    keys = [item.strip() for item in indicators.split(",") if item.strip()]
+    if not 2 <= len(keys) <= 5:
+        raise HTTPException(status_code=422, detail="Select between 2 and 5 indicators.")
+    if len(set(keys)) != len(keys):
+        raise HTTPException(status_code=422, detail="Each indicator can only be selected once.")
+    unknown = [key for key in keys if key not in INDICATORS]
+    if unknown:
+        raise HTTPException(status_code=404, detail="Unsupported macro indicator: " + ", ".join(unknown))
+    if years not in {1, 3, 5, 10}:
+        raise HTTPException(status_code=422, detail="Comparison window must be 1, 3, 5, or 10 years.")
+
+    _require_available_storage()
+    try:
+        return get_archived_macro_comparison(keys, years=years)
+    except MacroComparisonError as exc:
+        logger.warning("Macro comparison could not be calculated: %s", exc)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.warning("Could not compare archived macro indicators: %s", exc)
+        raise HTTPException(status_code=503, detail="Archived macro comparison is temporarily unavailable.") from exc
 
 
 @router.get(

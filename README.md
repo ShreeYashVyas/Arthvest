@@ -6,12 +6,12 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 
 ## Current Phase 1 capabilities
 
-- Next.js dashboard with API connection state, indicator cards and historical sparklines.
+- Next.js dashboard with API connection state, indicator cards, historical sparklines, archived analytics and normalized cross-indicator comparisons.
 - FastAPI endpoints for health, a macro-indicator catalog, a best-effort overview, history, data quality, and a provisional U.S. score.
 - U.S. indicators: Federal Funds Effective Rate, CPI inflation (calculated year over year), and unemployment rate.
 - India-related indicators: quarterly real GDP growth, annual consumer-price inflation, Economic Policy Uncertainty Index, INR per USD exchange rate, and real effective exchange rate.
 - Source observation dates, retrieval timestamps, native units, frequency-aware freshness and period-labelled historical trends.
-- In-process 15-minute source-series cache; optional SQLAlchemy persistence for source observations, upstream revisions, and fetch successes/failures.
+- In-process 15-minute source-series cache; optional SQLAlchemy persistence for source observations, upstream revisions, and fetch successes/failures; descriptive analytics and comparison over the archive.
 - GitHub Actions workflow for backend tests and frontend production build.
 
 ## Technology
@@ -19,8 +19,8 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 - **Frontend:** Next.js, React, TypeScript, Tailwind CSS, Lucide
 - **Backend:** Python, FastAPI, Pydantic
 - **Source data:** published FRED series with source-attribution links
-- **Persistence:** not yet implemented; cache is in-process only
-- **Database:** PostgreSQL remains a future phase
+- **Persistence:** optional SQLAlchemy archive for observations, revisions, and source checks
+- **Database:** PostgreSQL through `DATABASE_URL` when configured; live source feeds still run without persistence
 
 ## Project structure
 
@@ -115,7 +115,7 @@ The optional archive can power a descriptive analytics endpoint such as `/api/ma
 | `GET /api/macro/storage` | Database readiness and archive counts |
 | `GET /api/macro/archive/{indicator_key}?limit=12` | Stored source-native observations (requires `DATABASE_URL`) |
 | `GET /api/macro/revisions/{indicator_key}?limit=20` | Detected upstream value revisions (requires `DATABASE_URL`) |
-| `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)
+| `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)\n| `GET /api/macro/analytics/{indicator_key}?limit=12` | Descriptive analytics over archived observations (requires `DATABASE_URL`)\n| `GET /api/macro/compare?indicators=fed-funds,us-inflation,us-unemployment&years=5` | Rebased relative trends for 2–5 archived indicators (requires `DATABASE_URL`)
 
 Indicator keys, formulas, sources and freshness thresholds are documented in [docs/MACRO_DATA.md](docs/MACRO_DATA.md).
 
@@ -130,4 +130,9 @@ Indicator keys, formulas, sources and freshness thresholds are documented in [do
 
 ## Current limitations
 
-No persistent database, scheduled ingestion, historical database, Indian inflation series with verified current observations, market-price feeds, geopolitical event model, or calibrated full composite score has been implemented yet. Current historical trends are fetched from upstream series and cached in memory.
+Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. Scheduled ingestion, market-price feeds, a geopolitical event model, and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
+
+
+## Cross-indicator historical comparison
+
+The optional archive also powers `GET /api/macro/compare?indicators=fed-funds,us-inflation,us-unemployment&years=5`. Select 2–5 supported keys and a 1, 3, 5, or 10 year calendar window. Each indicator is rebased independently to 100 at its first archived display observation inside the window, allowing relative value movements to be seen together despite different native units. The output preserves each series' actual observation dates and source link; it does not interpolate dates or interpret an increase as positive or negative for the economy. Series with insufficient observations or a non-positive starting value are explicitly marked rather than misleadingly normalized.

@@ -124,3 +124,8 @@ FRED is the distribution endpoint used by this prototype; it is not always the o
 Source labels in the UI are concise labels, not a substitute for reading the original series' citation and use terms.
 
 Consult the linked series pages for current release cadence, attribution requirements and revisions.
+
+
+## Cross-indicator comparison
+
+`GET /api/macro/compare?indicators=fed-funds,us-inflation,us-unemployment&years=5` compares 2–5 supported keys over a 1, 3, 5, or 10 year calendar window. Each series is rebased to 100 on its own first archived display observation inside that window; `relative_change_percent` reports the movement from its baseline to its latest in-window reading. The series retain separate real observation dates and native units. No missing dates are interpolated, and positive baseline values are required for relative indexing. This is descriptive comparison, not correlation, causality, a forecast, or the calibrated full macro regime score. A reachable `DATABASE_URL` is required.

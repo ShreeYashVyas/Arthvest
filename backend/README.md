@@ -39,3 +39,8 @@ New endpoints:
 The archive stores source-native FRED values. For example, `CPIAUCSL` is the CPI index, not the derived year-over-year inflation rate. Persistence errors are logged but do not interrupt live feed delivery; check the storage endpoint to verify the database is available.
 
 - `GET /api/macro/analytics/{indicator_key}?limit=12` — descriptive historical trend and distribution statistics (requires `DATABASE_URL` and archived observations)
+
+
+## Archived cross-indicator comparison
+
+When `DATABASE_URL` points to a reachable database, use `GET /api/macro/compare?indicators=fed-funds,us-inflation,us-unemployment&years=5` to compare 2–5 supported indicators across a 1, 3, 5, or 10 year window. Relative trends are independently rebased to 100 at each indicator's first in-window archived observation. Different source frequencies are preserved, and series without enough history or a positive baseline are marked explicitly.

@@ -259,8 +259,8 @@ def get_storage_summary() -> dict[str, Any]:
 
 def list_archived_observations(series_id: str, limit: int = 12) -> list[dict[str, Any]]:
     """Return latest current-known observations in chronological order."""
-    if not 1 <= limit <= 500:
-        raise ValueError("Archive limit must be between 1 and 500")
+    if not 1 <= limit <= 10000:
+        raise ValueError("Archive limit must be between 1 and 10000")
     url = _database_url()
     if url is None:
         raise StorageDisabledError("DATABASE_URL is not configured")
