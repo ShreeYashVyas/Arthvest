@@ -48,6 +48,16 @@ INDICATORS: dict[str, dict[str, str]] = {
         "calculation": "Latest available UNRATE observation.",
         "max_age_days": "100",
     },
+    "india-gdp-growth": {
+        "indicator": "India Real GDP Growth (year over year)",
+        "description": "Quarterly year-over-year growth rate for India's real gross domestic product.",
+        "frequency": "Quarterly",
+        "series_id": "INDGDPRQPSMEI",
+        "unit": "percent year over year",
+        "source": "Organisation for Economic Co-operation and Development (OECD) via FRED",
+        "calculation": "Latest available quarterly year-over-year growth observation, shown as published.",
+        "max_age_days": "240",
+    },
     "india-policy-uncertainty": {
         "indicator": "India Economic Policy Uncertainty Index",
         "description": "Monthly index tracking economic policy uncertainty in India.",
