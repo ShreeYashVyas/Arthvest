@@ -125,3 +125,80 @@ export async function fetchFederalFundsRate(
 
   return payload;
 }
+
+
+export type MacroHistoryPoint = {
+  observation_date: string;
+  value: number;
+};
+
+export type MacroHistory = {
+  generated_at: string;
+  retrieved_at: string;
+  key: string;
+  indicator: string;
+  series_id: string;
+  unit: string;
+  source: string;
+  source_url: string;
+  calculation: string;
+  requested_limit: number;
+  returned_count: number;
+  points: MacroHistoryPoint[];
+};
+
+function isMacroHistory(value: unknown): value is MacroHistory {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  return (
+    typeof data.generated_at === "string" &&
+    typeof data.retrieved_at === "string" &&
+    typeof data.key === "string" &&
+    typeof data.indicator === "string" &&
+    typeof data.series_id === "string" &&
+    typeof data.unit === "string" &&
+    typeof data.source === "string" &&
+    typeof data.source_url === "string" &&
+    typeof data.calculation === "string" &&
+    typeof data.requested_limit === "number" &&
+    typeof data.returned_count === "number" &&
+    Array.isArray(data.points) &&
+    data.points.every((point: unknown) => {
+      if (typeof point !== "object" || point === null) return false;
+      const item = point as Record<string, unknown>;
+      return (
+        typeof item.observation_date === "string" &&
+        typeof item.value === "number" &&
+        Number.isFinite(item.value)
+      );
+    })
+  );
+}
+
+export async function fetchMacroHistory(
+  key: string,
+  limit = 12,
+  signal?: AbortSignal,
+): Promise<MacroHistory> {
+  const allowedKeys = ["fed-funds", "us-inflation", "us-unemployment"];
+  if (!allowedKeys.includes(key)) {
+    throw new Error("Unsupported macro history key.");
+  }
+
+  const boundedLimit = Math.min(60, Math.max(1, Math.trunc(limit)));
+  const response = await fetch(
+    API_BASE_URL + "/api/macro/history/" + encodeURIComponent(key) +
+      "?limit=" + boundedLimit,
+    { cache: "no-store", signal },
+  );
+
+  if (!response.ok) {
+    throw new Error("Historical macro observations are temporarily unavailable.");
+  }
+
+  const payload: unknown = await response.json();
+  if (!isMacroHistory(payload)) {
+    throw new Error("Macro history API returned an unexpected response format.");
+  }
+  return payload;
+}
