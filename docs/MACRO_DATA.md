@@ -87,4 +87,15 @@ Exact prototype bands returned by the API:
 - Indian rupees per U.S. dollar: [FRED DEXINUS](https://fred.stlouisfed.org/series/DEXINUS)
 - India real effective exchange rate: [FRED CCRETT01INM661N](https://fred.stlouisfed.org/series/CCRETT01INM661N)
 
+### Attribution and redistribution
+
+FRED is the distribution endpoint used by this prototype; it is not always the original data producer. Follow the source-specific notes on each linked series page when citing or redistributing observations:
+
+- OECD-sourced indicators (India GDP growth and India REER) should credit the OECD dataset as described on their FRED series pages. Review OECD copyright and reuse notes before redistributing those data.
+- India annual consumer-price inflation should be attributed to the World Bank's World Development Indicators, retrieved via FRED.
+- The India Economic Policy Uncertainty Index should credit Baker, Bloom and Davis as indicated on the series page.
+- Federal Reserve Board and U.S. Bureau of Labor Statistics series retain source-attribution links in the API and dashboard.
+
+Source labels in the UI are concise labels, not a substitute for reading the original series' citation and use terms.
+
 Consult the linked series pages for current release cadence, attribution requirements and revisions.
