@@ -237,3 +237,28 @@ def test_score_route_withholds_result_when_source_is_unavailable(monkeypatch) ->
     assert payload["available"] is False
     assert payload["score"] is None
     assert payload["label"] == "insufficient-data"
+
+
+
+def test_macro_quality_counts_in_progress_separately(monkeypatch) -> None:
+    def fake_fetch(key: str) -> dict[str, str | float]:
+        payload = _sample_payload(key)
+        if key == "fed-funds":
+            payload["freshness_status"] = "in-progress"
+            payload["observation_age_days"] = 0
+        return payload
+
+    monkeypatch.setattr(macro_routes, "fetch_macro_indicator", fake_fetch)
+
+    response = client.get("/api/macro/quality")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["quality_status"] == "partial"
+    assert payload["in_progress_count"] == 1
+    assert payload["fresh_count"] == len(INDICATORS) - 1
+    assert payload["stale_count"] == 0
+    items = {item["key"]: item for item in payload["indicators"]}
+    assert items["fed-funds"]["status"] == "available"
+    assert items["fed-funds"]["freshness_status"] == "in-progress"
+    assert "period that has not ended" in items["fed-funds"]["issue"]
