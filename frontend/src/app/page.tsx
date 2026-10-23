@@ -68,7 +68,31 @@ function formatTime(date: Date): string {
   });
 }
 
-function Sparkline({ points }: { points: MacroHistoryPoint[] }) {
+function formatObservationPeriod(observationDate: string, frequency: string): string {
+  const date = new Date(observationDate + "T00:00:00");
+  const year = date.getFullYear();
+
+  if (frequency === "Annual") return String(year);
+  if (frequency === "Quarterly") {
+    return `Q${Math.floor(date.getMonth() / 3) + 1} ${year}`;
+  }
+  if (frequency === "Monthly") {
+    return date.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+  }
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function Sparkline({
+  points,
+  frequency,
+}: {
+  points: MacroHistoryPoint[];
+  frequency: string;
+}) {
   if (points.length < 2) {
     return <p className="py-3 text-[10px] text-muted">Not enough historical points to chart.</p>;
   }
@@ -109,8 +133,8 @@ function Sparkline({ points }: { points: MacroHistoryPoint[] }) {
         />
       </svg>
       <div className="mt-1 flex justify-between text-[9px] text-muted">
-        <span>{points[0].observation_date}</span>
-        <span>{points[points.length - 1].observation_date}</span>
+        <span>{formatObservationPeriod(points[0].observation_date, frequency)}</span>
+        <span>{formatObservationPeriod(points[points.length - 1].observation_date, frequency)}</span>
       </div>
     </div>
   );
@@ -436,7 +460,7 @@ export default function Home() {
                           <div>
                             <div className="text-sm font-medium text-white">{component.indicator}</div>
                             <div className="mt-1 text-[10px] text-muted">
-                              {component.observation_date ? `Observation ${component.observation_date}` : "Observation unavailable"}
+                              {component.observation_date ? `Observation ${formatObservationPeriod(component.observation_date, "Monthly")}` : "Observation unavailable"}
                             </div>
                           </div>
                           <div className="text-right">
@@ -633,11 +657,7 @@ export default function Home() {
                         <div className="mt-4 border-t border-line pt-3">
                           <div className="text-[10px] uppercase tracking-[0.12em] text-muted">Observation date</div>
                           <div className="mt-1 text-xs font-medium text-slate-200">
-                            {new Date(item.data.observation_date + "T00:00:00").toLocaleDateString("en-IN", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })}
+                            {formatObservationPeriod(item.data.observation_date, item.data.frequency)}
                           </div>
                           <div className="mt-1 text-[10px] text-muted">
                             {item.data.observation_age_days} calendar days since observation
@@ -647,7 +667,7 @@ export default function Home() {
                           <p className="mt-3 text-[11px] leading-5 text-muted">{item.data.calculation}</p>
                         ) : null}
                         {historyByKey[item.key] ? (
-                          <Sparkline points={historyByKey[item.key]!.points} />
+                          <Sparkline points={historyByKey[item.key]!.points} frequency={historyByKey[item.key]!.frequency} />
                         ) : (
                           <div className="mt-4 rounded-lg border border-line/60 px-3 py-2 text-[10px] text-muted">
                             Historical trend currently unavailable.
