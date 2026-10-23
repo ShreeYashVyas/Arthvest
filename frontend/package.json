@@ -22,12 +22,17 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^9.19.0",
     "eslint-config-next": "^15.5.28",
-    "postcss": "^8.5.2",
+    "postcss": "^8.5.23",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3"
   },
   "engines": {
     "node": ">=20.9.0",
     "npm": ">=10.0.0"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.23"
+    }
   }
 }
