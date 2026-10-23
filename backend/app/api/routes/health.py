@@ -1,0 +1,15 @@
+"""Health check endpoint."""
+
+from fastapi import APIRouter
+
+router = APIRouter(tags=["health"])
+
+
+@router.get("/health")
+def health_check() -> dict[str, str]:
+    """Return service health without external dependencies."""
+    return {
+        "status": "ok",
+        "project": "Arthvest",
+        "phase": "Macro Intelligence",
+    }
