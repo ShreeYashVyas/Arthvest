@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchHistoricalAnalytics, fetchMacroCatalog, fetchMacroComparison, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchUSMacroScore, type HistoricalAnalytics, type MacroCatalog, type MacroComparison, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type USMacroScore } from "@/lib/api";
+import { fetchHistoricalAnalytics, fetchMacroCatalog, fetchMacroComparison, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchMacroSourceChecks, fetchMacroStorageStatus, fetchUSMacroScore, type HistoricalAnalytics, type MacroCatalog, type MacroComparison, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type MacroSourceChecks, type MacroStorageStatus, type USMacroScore } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -303,6 +303,11 @@ export default function Home() {
   const [comparisonLoading, setComparisonLoading] = useState(true);
   const [comparisonError, setComparisonError] = useState<string | null>(null);
   const [comparisonRetry, setComparisonRetry] = useState(0);
+  const [storageStatus, setStorageStatus] = useState<MacroStorageStatus | null>(null);
+  const [sourceChecks, setSourceChecks] = useState<MacroSourceChecks | null>(null);
+  const [archiveLoading, setArchiveLoading] = useState(true);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [archiveRetry, setArchiveRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -460,6 +465,46 @@ export default function Home() {
     return () => controller.abort();
   }, [comparisonKeys, comparisonYears, comparisonRetry]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    setArchiveLoading(true);
+    setArchiveError(null);
+
+    fetchMacroStorageStatus(controller.signal)
+      .then(async (status) => {
+        if (!active) return;
+        setStorageStatus(status);
+        setSourceChecks(null);
+        if (!status.enabled || !status.available) return;
+        try {
+          const result = await fetchMacroSourceChecks(12, controller.signal);
+          if (active) setSourceChecks(result);
+        } catch (error: unknown) {
+          if (active) {
+            setArchiveError(
+              error instanceof Error ? error.message : "Unable to load recent source checks.",
+            );
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setStorageStatus(null);
+        setArchiveError(
+          error instanceof Error ? error.message : "Unable to load database status.",
+        );
+      })
+      .finally(() => {
+        if (active) setArchiveLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [archiveRetry]);
+
   return (
     <main className="min-h-screen px-4 pb-10 pt-5 sm:px-7 lg:px-10">
       <div className="mx-auto max-w-[1440px]">
@@ -614,6 +659,138 @@ export default function Home() {
           </div>
         </section>
 
+
+
+        <section
+          aria-labelledby="archive-health-title"
+          className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/70"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">Infrastructure / data integrity</div>
+              <h2 id="archive-health-title" className="mt-2 text-xl font-medium text-white">
+                Archive health
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                Verify whether persistent storage is enabled and reachable, how much source history has been retained, and whether recent upstream fetches succeeded.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setArchiveRetry((value) => value + 1)}
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-slate-200 transition hover:border-accent/50 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
+            >
+              <RefreshCw size={13} /> Refresh archive status
+            </button>
+          </div>
+          <div className="p-5 sm:p-7">
+            {archiveLoading ? (
+              <div role="status" className="flex items-center gap-3 py-5 text-sm text-muted">
+                <RefreshCw size={16} className="animate-spin" /> Checking database and source history…
+              </div>
+            ) : archiveError && !storageStatus ? (
+              <div role="status" className="rounded-xl border border-amber-300/20 bg-amber-300/[0.03] p-4 text-sm text-amber-100">
+                {archiveError}
+              </div>
+            ) : storageStatus ? (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className={"grid h-10 w-10 shrink-0 place-items-center rounded-xl border " +
+                      (storageStatus.available ? "border-accent/30 bg-accent/10 text-accent" : "border-amber-300/25 bg-amber-300/5 text-amber-200")}>
+                      <Database size={18} />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-white">
+                        {!storageStatus.enabled
+                          ? "Persistence disabled"
+                          : storageStatus.available
+                            ? "Database connected"
+                            : "Database unreachable"}
+                      </div>
+                      <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">{storageStatus.note}</p>
+                    </div>
+                  </div>
+                  <span className={"rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[0.1em] " +
+                    (!storageStatus.enabled
+                      ? "border-amber-300/25 bg-amber-300/5 text-amber-200"
+                      : storageStatus.available
+                        ? "border-accent/25 bg-accent/5 text-accent"
+                        : "border-amber-300/25 bg-amber-300/5 text-amber-200")}>
+                    {!storageStatus.enabled ? "Not configured" : storageStatus.available ? storageStatus.backend + " · online" : "Connection error"}
+                  </span>
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { label: "Archived observations", value: storageStatus.observation_count },
+                    { label: "Detected revisions", value: storageStatus.revision_count },
+                    { label: "Recorded source checks", value: storageStatus.source_check_count },
+                    {
+                      label: "Last source check",
+                      value: storageStatus.last_check_at
+                        ? new Date(storageStatus.last_check_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+                        : null,
+                    },
+                  ].map((metric) => (
+                    <div key={metric.label} className="rounded-xl border border-line bg-[#0B1017] p-4">
+                      <div className="text-[10px] text-muted">{metric.label}</div>
+                      <div className="mt-2 break-words text-lg font-light text-white">
+                        {metric.value === null ? "—" : typeof metric.value === "number" ? metric.value.toLocaleString("en-US") : metric.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {archiveError ? (
+                  <p role="status" className="mt-4 text-xs leading-5 text-amber-200">{archiveError}</p>
+                ) : null}
+
+                {storageStatus.enabled && storageStatus.available ? (
+                  <div className="mt-5 overflow-hidden rounded-xl border border-line">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
+                      <div className="text-xs font-medium text-slate-200">Recent upstream fetch checks</div>
+                      <div className="text-[10px] text-muted">
+                        {sourceChecks ? sourceChecks.count + " checks returned" : "No checks loaded"}
+                      </div>
+                    </div>
+                    {sourceChecks && sourceChecks.checks.length > 0 ? (
+                      <div className="divide-y divide-line">
+                        {sourceChecks.checks.slice(0, 8).map((check, index) => (
+                          <div key={check.series_id + "-" + check.checked_at + "-" + index} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                            <span className={"h-2 w-2 shrink-0 rounded-full " + (check.status === "success" ? "bg-accent" : "bg-amber-300")} />
+                            <div className="min-w-[130px] flex-1">
+                              <div className="text-xs font-medium text-slate-200">{check.indicator_key ?? check.series_id}</div>
+                              <div className="mt-1 text-[10px] text-muted">
+                                {check.series_id} · {new Date(check.checked_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className={"text-[10px] uppercase tracking-[0.08em] " + (check.status === "success" ? "text-accent" : "text-amber-200")}>
+                                {check.status === "success" ? "Success" : "Failed"}
+                              </div>
+                              <div className="mt-1 text-[10px] text-muted">
+                                {check.elapsed_ms === null ? "—" : check.elapsed_ms + " ms"}
+                                {check.latest_observation_date ? " · data " + check.latest_observation_date : ""}
+                              </div>
+                              {check.error_code ? <div className="mt-1 text-[10px] text-amber-200">{check.error_code}</div> : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="px-4 py-4 text-xs leading-5 text-muted">
+                        No upstream fetch checks have been recorded yet. The first successful live source fetches will begin populating this list.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-sm text-muted">No archive status was returned.</p>
+            )}
+          </div>
+        </section>
 
         <section
           aria-labelledby="historical-analytics-title"

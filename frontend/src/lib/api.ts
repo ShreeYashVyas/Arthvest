@@ -683,3 +683,114 @@ export async function fetchMacroComparison(
   }
   return payload;
 }
+
+
+export type MacroStorageStatus = {
+  enabled: boolean;
+  available: boolean;
+  backend: string;
+  observation_count: number | null;
+  revision_count: number | null;
+  source_check_count: number | null;
+  last_check_at: string | null;
+  note: string;
+};
+
+export type MacroSourceCheck = {
+  indicator_key: string | null;
+  series_id: string;
+  checked_at: string;
+  status: "success" | "failure";
+  observation_count: number | null;
+  latest_observation_date: string | null;
+  latest_source_value: number | null;
+  elapsed_ms: number | null;
+  error_code: string | null;
+};
+
+export type MacroSourceChecks = {
+  count: number;
+  checks: MacroSourceCheck[];
+};
+
+function isNullableCount(value: unknown): value is number | null {
+  return value === null || (
+    typeof value === "number" && Number.isInteger(value) && value >= 0
+  );
+}
+
+function isMacroStorageStatus(value: unknown): value is MacroStorageStatus {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  return typeof data.enabled === "boolean" &&
+    typeof data.available === "boolean" &&
+    typeof data.backend === "string" &&
+    isNullableCount(data.observation_count) &&
+    isNullableCount(data.revision_count) &&
+    isNullableCount(data.source_check_count) &&
+    (data.last_check_at === null || typeof data.last_check_at === "string") &&
+    typeof data.note === "string";
+}
+
+export async function fetchMacroStorageStatus(
+  signal?: AbortSignal,
+): Promise<MacroStorageStatus> {
+  const response = await fetch(API_BASE_URL + "/api/macro/storage", {
+    cache: "no-store",
+    signal,
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error("Database status is temporarily unavailable.");
+  }
+  if (!isMacroStorageStatus(payload)) {
+    throw new Error("Database status API returned an unexpected response format.");
+  }
+  return payload;
+}
+
+function isMacroSourceChecks(value: unknown): value is MacroSourceChecks {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  if (typeof data.count !== "number" || !Number.isInteger(data.count) ||
+      !Array.isArray(data.checks)) return false;
+
+  return data.checks.every((rawCheck: unknown) => {
+    if (typeof rawCheck !== "object" || rawCheck === null) return false;
+    const check = rawCheck as Record<string, unknown>;
+    return (check.indicator_key === null || typeof check.indicator_key === "string") &&
+      typeof check.series_id === "string" &&
+      typeof check.checked_at === "string" &&
+      (check.status === "success" || check.status === "failure") &&
+      isNullableCount(check.observation_count) &&
+      (check.latest_observation_date === null || typeof check.latest_observation_date === "string") &&
+      (check.latest_source_value === null ||
+        (typeof check.latest_source_value === "number" && Number.isFinite(check.latest_source_value))) &&
+      (check.elapsed_ms === null ||
+        (typeof check.elapsed_ms === "number" && Number.isInteger(check.elapsed_ms))) &&
+      (check.error_code === null || typeof check.error_code === "string");
+  });
+}
+
+export async function fetchMacroSourceChecks(
+  limit = 24,
+  signal?: AbortSignal,
+): Promise<MacroSourceChecks> {
+  const boundedLimit = Math.min(100, Math.max(1, Math.trunc(limit)));
+  const response = await fetch(
+    API_BASE_URL + "/api/macro/source-checks?limit=" + boundedLimit,
+    { cache: "no-store", signal },
+  );
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = typeof payload === "object" && payload !== null &&
+      "detail" in payload && typeof (payload as { detail?: unknown }).detail === "string"
+      ? (payload as { detail: string }).detail
+      : null;
+    throw new Error(detail ?? "Recent source checks are temporarily unavailable.");
+  }
+  if (!isMacroSourceChecks(payload)) {
+    throw new Error("Source-check API returned an unexpected response format.");
+  }
+  return payload;
+}

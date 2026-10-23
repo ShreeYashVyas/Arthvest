@@ -6,7 +6,7 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 
 ## Current Phase 1 capabilities
 
-- Next.js dashboard with API connection state, indicator cards, historical sparklines, archived analytics and normalized cross-indicator comparisons.
+- Next.js dashboard with API connection state, indicator cards, historical sparklines, normalized cross-indicator comparisons, and an archive-health monitor for database readiness and source-check history.
 - FastAPI endpoints for health, a macro-indicator catalog, a best-effort overview, history, data quality, and a provisional U.S. score.
 - U.S. indicators: Federal Funds Effective Rate, CPI inflation (calculated year over year), and unemployment rate.
 - India-related indicators: quarterly real GDP growth, annual consumer-price inflation, Economic Policy Uncertainty Index, INR per USD exchange rate, and real effective exchange rate.
@@ -138,3 +138,8 @@ Persistence is optional rather than automatic: archive, archived analytics, and 
 ## Cross-indicator historical comparison
 
 The optional archive also powers `GET /api/macro/compare?indicators=fed-funds,us-inflation,us-unemployment&years=5`. Select 2–5 supported keys and a 1, 3, 5, or 10 year calendar window. Each indicator is rebased independently to 100 at its first archived display observation inside the window, allowing relative value movements to be seen together despite different native units. The output preserves each series' actual observation dates and source link; it does not interpolate dates or interpret an increase as positive or negative for the economy. Series with insufficient observations or a non-positive starting value are explicitly marked rather than misleadingly normalized.
+
+
+## Archive health monitor
+
+The dashboard's Archive Health panel reads `GET /api/macro/storage` and, when persistence is reachable, `GET /api/macro/source-checks?limit=12`. It shows whether persistence is disabled, reachable, or configured but unreachable, along with retained observation/revision/source-check counts and recent fetch outcomes. The configured database URL and credentials are never displayed by this endpoint.
