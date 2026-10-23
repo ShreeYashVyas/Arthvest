@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchMacroCatalog, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchUSMacroScore, type MacroCatalog, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type USMacroScore } from "@/lib/api";
+import { fetchHistoricalAnalytics, fetchMacroCatalog, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchUSMacroScore, type HistoricalAnalytics, type MacroCatalog, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type USMacroScore } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -12,6 +12,10 @@ import {
   Clock3,
   Globe2,
   Layers3,
+  Database,
+  Minus,
+  TrendingDown,
+  TrendingUp,
   RefreshCw,
   ShieldAlert,
   Sparkles,
@@ -200,6 +204,11 @@ export default function Home() {
   const [usScore, setUsScore] = useState<USMacroScore | null>(null);
   const [scoreLoading, setScoreLoading] = useState(true);
   const [scoreError, setScoreError] = useState<string | null>(null);
+  const [analyticsKey, setAnalyticsKey] = useState("fed-funds");
+  const [historicalAnalytics, setHistoricalAnalytics] = useState<HistoricalAnalytics | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [analyticsRetry, setAnalyticsRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -306,6 +315,31 @@ export default function Home() {
       controller.abort();
     };
   }, [retry]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setAnalyticsLoading(true);
+    setAnalyticsError(null);
+    setHistoricalAnalytics(null);
+
+    fetchHistoricalAnalytics(analyticsKey, 12, controller.signal)
+      .then((result) => {
+        setHistoricalAnalytics(result);
+        setAnalyticsError(null);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setHistoricalAnalytics(null);
+        setAnalyticsError(
+          error instanceof Error ? error.message : "Unable to load archived historical analytics.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAnalyticsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [analyticsKey, analyticsRetry]);
 
   return (
     <main className="min-h-screen px-4 pb-10 pt-5 sm:px-7 lg:px-10">
@@ -458,6 +492,178 @@ export default function Home() {
                 })}
               </div>
             </div>
+          </div>
+        </section>
+
+
+        <section
+          aria-labelledby="historical-analytics-title"
+          className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/70"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">Research tools / archived data</div>
+              <h2 id="historical-analytics-title" className="mt-2 text-xl font-medium text-white">
+                Historical trend analysis
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                Compare the observation window&apos;s first and latest values, plus its range and dispersion. This is descriptive history, not a forecast or a calibrated macro regime score.
+              </p>
+            </div>
+            <label className="flex flex-col gap-2 text-[10px] uppercase tracking-[0.12em] text-muted">
+              Indicator
+              <select
+                aria-label="Select indicator for historical analytics"
+                value={analyticsKey}
+                onChange={(event) => setAnalyticsKey(event.target.value)}
+                className="min-w-[220px] rounded-lg border border-line bg-[#0B1017] px-3 py-2.5 text-xs normal-case tracking-normal text-slate-100 outline-none transition focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
+              >
+                <option value="fed-funds">Federal Funds Rate</option>
+                <option value="us-inflation">U.S. CPI inflation YoY</option>
+                <option value="us-unemployment">U.S. unemployment</option>
+                <option value="india-gdp-growth">India real GDP growth</option>
+                <option value="india-cpi-inflation-annual">India annual CPI inflation</option>
+                <option value="india-policy-uncertainty">India policy uncertainty</option>
+                <option value="usd-inr">INR per USD</option>
+                <option value="india-reer">India REER</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="p-5 sm:p-7">
+            {analyticsLoading ? (
+              <div role="status" className="flex items-center gap-3 py-5 text-sm text-muted">
+                <RefreshCw size={16} className="animate-spin" /> Loading archived observations…
+              </div>
+            ) : analyticsError ? (
+              <div role="status" className="flex flex-col items-start gap-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.03] p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <Database size={18} className="mt-0.5 shrink-0 text-amber-200" />
+                  <div>
+                    <div className="text-sm font-medium text-amber-100">Archived analytics unavailable</div>
+                    <p className="mt-2 max-w-3xl text-xs leading-5 text-muted">{analyticsError}</p>
+                    <p className="mt-2 max-w-3xl text-xs leading-5 text-muted">
+                      Configure a reachable DATABASE_URL on the backend and let successful source fetches populate the archive. Live indicator cards remain available separately.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAnalyticsRetry((value) => value + 1)}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-slate-200 transition hover:border-accent/50 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
+                >
+                  <RefreshCw size={13} /> Retry archive
+                </button>
+              </div>
+            ) : historicalAnalytics ? (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-medium text-white">{historicalAnalytics.indicator}</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted">
+                      {historicalAnalytics.returned_count} observations
+                      {historicalAnalytics.period_start && historicalAnalytics.period_end
+                        ? " · " + formatObservationPeriod(historicalAnalytics.period_start, historicalAnalytics.frequency) + " – " + formatObservationPeriod(historicalAnalytics.period_end, historicalAnalytics.frequency)
+                        : " · No archived window yet"}
+                    </p>
+                  </div>
+                  <a
+                    href={historicalAnalytics.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-slate-300 underline decoration-line underline-offset-4 transition hover:text-accent"
+                  >
+                    {historicalAnalytics.series_id} <ArrowUpRight size={12} />
+                  </a>
+                </div>
+
+                {historicalAnalytics.returned_count < 2 ? (
+                  <div role="status" className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/[0.03] p-4">
+                    <div className="text-sm font-medium text-amber-100">Not enough archived history yet</div>
+                    <p className="mt-1 text-xs leading-5 text-muted">
+                      At least two display observations are needed for a directional comparison. The first successful source fetch can populate historical source observations.
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-xl border border-line bg-[#0B1017] p-4">
+                    <div className="text-[10px] text-muted">Latest value</div>
+                    <div className="mt-2 text-2xl font-light text-white">
+                      {historicalAnalytics.summary.latest_value === null ? "—" : historicalAnalytics.summary.latest_value.toLocaleString("en-US", { maximumFractionDigits: 3 })}
+                    </div>
+                    <div className="mt-1 break-words text-[10px] leading-4 text-muted">{historicalAnalytics.unit}</div>
+                  </div>
+                  <div className="rounded-xl border border-line bg-[#0B1017] p-4">
+                    <div className="text-[10px] text-muted">Absolute change</div>
+                    <div className="mt-2 text-2xl font-light text-white">
+                      {historicalAnalytics.summary.absolute_change === null
+                        ? "—"
+                        : (historicalAnalytics.summary.absolute_change > 0 ? "+" : "") + historicalAnalytics.summary.absolute_change.toFixed(3)}
+                    </div>
+                    <div className="mt-1 text-[10px] leading-4 text-muted">{historicalAnalytics.change_unit}</div>
+                  </div>
+                  <div className="rounded-xl border border-line bg-[#0B1017] p-4">
+                    <div className="text-[10px] text-muted">Direction across window</div>
+                    <div className="mt-2 flex items-center gap-2 text-base font-medium text-white">
+                      {historicalAnalytics.summary.direction === "higher" ? (
+                        <TrendingUp size={17} className="text-amber-200" />
+                      ) : historicalAnalytics.summary.direction === "lower" ? (
+                        <TrendingDown size={17} className="text-accent" />
+                      ) : (
+                        <Minus size={17} className="text-muted" />
+                      )}
+                      {historicalAnalytics.summary.direction.replace("-", " ")}
+                    </div>
+                    <div className="mt-1 text-[10px] leading-4 text-muted">Descriptive, not a good/bad rating</div>
+                  </div>
+                  <div className="rounded-xl border border-line bg-[#0B1017] p-4">
+                    <div className="text-[10px] text-muted">Relative change</div>
+                    <div className="mt-2 text-2xl font-light text-white">
+                      {historicalAnalytics.summary.relative_change_percent === null
+                        ? "—"
+                        : (historicalAnalytics.summary.relative_change_percent > 0 ? "+" : "") + historicalAnalytics.summary.relative_change_percent.toFixed(2) + "%"}
+                    </div>
+                    <div className="mt-1 text-[10px] leading-4 text-muted">Versus first returned value</div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                  <div className="rounded-xl border border-line bg-[#0B1017] p-4 sm:p-5">
+                    <Sparkline points={historicalAnalytics.points} frequency={historicalAnalytics.frequency} />
+                    <div className="mt-3 text-[10px] leading-5 text-muted">
+                      {historicalAnalytics.calculation}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: "Window mean", value: historicalAnalytics.summary.mean },
+                      { label: "Minimum", value: historicalAnalytics.summary.minimum },
+                      { label: "Maximum", value: historicalAnalytics.summary.maximum },
+                      { label: "Population σ", value: historicalAnalytics.summary.population_standard_deviation },
+                    ].map((metric) => (
+                      <div key={metric.label} className="rounded-xl border border-line bg-[#0B1017] p-3">
+                        <div className="text-[10px] text-muted">{metric.label}</div>
+                        <div className="mt-2 text-lg font-light text-white">
+                          {metric.value === null ? "—" : metric.value.toLocaleString("en-US", { maximumFractionDigits: 3 })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <details className="mt-4 rounded-xl border border-line px-4 py-3">
+                  <summary className="cursor-pointer text-xs font-medium text-slate-200">Methodology & limitations</summary>
+                  <ul className="mt-3 list-disc space-y-1.5 pl-5 text-xs leading-5 text-muted">
+                    {historicalAnalytics.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
+                  </ul>
+                  <p className="mt-3 text-[10px] text-muted">
+                    Calculated {new Date(historicalAnalytics.generated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                  </p>
+                </details>
+              </>
+            ) : (
+              <p className="text-sm text-muted">No historical analytics were returned.</p>
+            )}
           </div>
         </section>
 

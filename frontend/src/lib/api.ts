@@ -416,3 +416,132 @@ export async function fetchMacroCatalog(
   }
   return payload;
 }
+
+
+export type HistoricalAnalyticsDirection =
+  | "higher"
+  | "lower"
+  | "flat"
+  | "insufficient-history";
+
+export type HistoricalAnalyticsSummary = {
+  oldest_value: number | null;
+  latest_value: number | null;
+  absolute_change: number | null;
+  relative_change_percent: number | null;
+  direction: HistoricalAnalyticsDirection;
+  mean: number | null;
+  minimum: number | null;
+  maximum: number | null;
+  population_standard_deviation: number | null;
+};
+
+export type HistoricalAnalytics = {
+  generated_at: string;
+  key: string;
+  indicator: string;
+  series_id: string;
+  unit: string;
+  change_unit: string;
+  frequency: string;
+  source: string;
+  source_url: string;
+  calculation: string;
+  requested_limit: number;
+  returned_count: number;
+  period_start: string | null;
+  period_end: string | null;
+  summary: HistoricalAnalyticsSummary;
+  points: MacroHistoryPoint[];
+  limitations: string[];
+};
+
+function isNullableFiniteNumber(value: unknown): value is number | null {
+  return value === null || (
+    typeof value === "number" && Number.isFinite(value)
+  );
+}
+
+function isHistoricalAnalytics(value: unknown): value is HistoricalAnalytics {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  if (
+    typeof data.generated_at !== "string" ||
+    typeof data.key !== "string" ||
+    typeof data.indicator !== "string" ||
+    typeof data.series_id !== "string" ||
+    typeof data.unit !== "string" ||
+    typeof data.change_unit !== "string" ||
+    typeof data.frequency !== "string" ||
+    typeof data.source !== "string" ||
+    typeof data.source_url !== "string" ||
+    typeof data.calculation !== "string" ||
+    typeof data.requested_limit !== "number" ||
+    typeof data.returned_count !== "number" ||
+    !(data.period_start === null || typeof data.period_start === "string") ||
+    !(data.period_end === null || typeof data.period_end === "string") ||
+    typeof data.summary !== "object" ||
+    data.summary === null ||
+    !Array.isArray(data.points) ||
+    !Array.isArray(data.limitations) ||
+    !data.limitations.every((item: unknown) => typeof item === "string")
+  ) return false;
+
+  const summary = data.summary as Record<string, unknown>;
+  return (
+    isNullableFiniteNumber(summary.oldest_value) &&
+    isNullableFiniteNumber(summary.latest_value) &&
+    isNullableFiniteNumber(summary.absolute_change) &&
+    isNullableFiniteNumber(summary.relative_change_percent) &&
+    ["higher", "lower", "flat", "insufficient-history"].includes(String(summary.direction)) &&
+    isNullableFiniteNumber(summary.mean) &&
+    isNullableFiniteNumber(summary.minimum) &&
+    isNullableFiniteNumber(summary.maximum) &&
+    isNullableFiniteNumber(summary.population_standard_deviation) &&
+    data.points.every((point: unknown) => {
+      if (typeof point !== "object" || point === null) return false;
+      const item = point as Record<string, unknown>;
+      return typeof item.observation_date === "string" &&
+        typeof item.value === "number" && Number.isFinite(item.value);
+    })
+  );
+}
+
+export async function fetchHistoricalAnalytics(
+  key: string,
+  limit = 12,
+  signal?: AbortSignal,
+): Promise<HistoricalAnalytics> {
+  const allowedKeys = [
+    "fed-funds",
+    "us-inflation",
+    "us-unemployment",
+    "india-gdp-growth",
+    "india-cpi-inflation-annual",
+    "india-policy-uncertainty",
+    "usd-inr",
+    "india-reer",
+  ];
+  if (!allowedKeys.includes(key)) {
+    throw new Error("Unsupported macro analytics key.");
+  }
+
+  const boundedLimit = Math.min(60, Math.max(2, Math.trunc(limit)));
+  const response = await fetch(
+    API_BASE_URL + "/api/macro/analytics/" + encodeURIComponent(key) +
+      "?limit=" + boundedLimit,
+    { cache: "no-store", signal },
+  );
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = typeof payload === "object" && payload !== null &&
+      "detail" in payload && typeof (payload as { detail?: unknown }).detail === "string"
+      ? (payload as { detail: string }).detail
+      : null;
+    throw new Error(detail ?? "Historical analytics are temporarily unavailable.");
+  }
+  if (!isHistoricalAnalytics(payload)) {
+    throw new Error("Historical analytics API returned an unexpected response format.");
+  }
+  return payload;
+}
