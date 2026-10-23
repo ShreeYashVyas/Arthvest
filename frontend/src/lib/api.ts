@@ -1,7 +1,7 @@
 export type MacroIndicator = {
   indicator: string;
   series_id: string;
-  value_percent: number;
+  value: number;
   observation_date: string;
   observation_age_days: number;
   freshness_status: "fresh" | "stale";
@@ -37,8 +37,8 @@ function isMacroIndicator(value: unknown): value is MacroIndicator {
   return (
     typeof data.indicator === "string" &&
     typeof data.series_id === "string" &&
-    typeof data.value_percent === "number" &&
-    Number.isFinite(data.value_percent) &&
+    typeof data.value === "number" &&
+    Number.isFinite(data.value) &&
     typeof data.observation_date === "string" &&
     typeof data.observation_age_days === "number" &&
     Number.isInteger(data.observation_age_days) &&
