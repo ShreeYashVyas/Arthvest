@@ -1438,6 +1438,87 @@ export default function Home() {
                 />
               </div>
               <p className="mt-3 text-xs leading-5 text-muted">{macroQuality.note}</p>
+
+              <div className="mt-5 overflow-x-auto rounded-xl border border-line">
+                <div className="border-b border-line px-4 py-3">
+                  <div className="text-xs font-medium text-slate-200">Per-indicator quality matrix</div>
+                  <p className="mt-1 text-[10px] leading-5 text-muted">
+                    Live source freshness is independent of the time the API was checked. Archived fetch details appear only when persistent storage is reachable.
+                  </p>
+                </div>
+                <table className="w-full min-w-[920px] border-collapse text-left text-xs">
+                  <thead className="bg-[#0B1017] text-[10px] uppercase tracking-[0.1em] text-muted">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Indicator</th>
+                      <th className="px-4 py-3 font-medium">Quality</th>
+                      <th className="px-4 py-3 font-medium">Observation</th>
+                      <th className="px-4 py-3 font-medium">API retrieved</th>
+                      <th className="px-4 py-3 font-medium">Latest archive check</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {macroQuality.indicators.map((qualityItem) => {
+                      const overviewItem = macroOverview?.indicators.find((item) => item.key === qualityItem.key);
+                      const data = overviewItem?.data ?? null;
+                      const persistedCheck = sourceChecks?.checks.find((check) =>
+                        check.indicator_key === qualityItem.key ||
+                        (data !== null && check.series_id === data.series_id)
+                      );
+                      const freshness = qualityItem.status === "unavailable"
+                        ? "unavailable"
+                        : qualityItem.freshness_status ?? "unknown";
+                      const statusClass = freshness === "fresh"
+                        ? "border-accent/25 bg-accent/5 text-accent"
+                        : "border-amber-300/25 bg-amber-300/5 text-amber-200";
+                      let archiveLabel = "Not recorded";
+                      let archiveDetail = "";
+                      if (persistedCheck) {
+                        archiveLabel = persistedCheck.status === "success" ? "Fetch succeeded" : "Fetch failed";
+                        archiveDetail = new Date(persistedCheck.checked_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+                      } else if (!storageStatus?.enabled) {
+                        archiveLabel = "Storage not configured";
+                      } else if (!storageStatus.available) {
+                        archiveLabel = "Storage unreachable";
+                      }
+
+                      return (
+                        <tr key={qualityItem.key} className="align-top text-slate-300">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-100">{data?.indicator ?? qualityItem.key}</div>
+                            <div className="mt-1 text-[10px] text-muted">{data?.series_id ?? qualityItem.key}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={"inline-flex rounded-md border px-2 py-1 text-[9px] uppercase tracking-[0.08em] " + statusClass}>
+                              {freshness}
+                            </span>
+                            {qualityItem.issue ? <div className="mt-2 max-w-[190px] text-[10px] leading-4 text-muted">{qualityItem.issue}</div> : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            {data ? (
+                              <>
+                                <div>{formatObservationPeriod(data.observation_date, data.frequency)}</div>
+                                <div className="mt-1 text-[10px] text-muted">{qualityItem.observation_age_days ?? data.observation_age_days} days old</div>
+                              </>
+                            ) : (
+                              <span className="text-amber-200">No validated reading</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-muted">
+                            {data
+                              ? new Date(data.retrieved_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className={persistedCheck?.status === "failure" ? "text-amber-200" : "text-slate-300"}>{archiveLabel}</div>
+                            {archiveDetail ? <div className="mt-1 text-[10px] text-muted">{archiveDetail}</div> : null}
+                            {persistedCheck?.error_code ? <div className="mt-1 text-[10px] text-amber-200">{persistedCheck.error_code}</div> : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </>
           ) : (
             <p role="status" className="mt-4 text-xs text-muted">

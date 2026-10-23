@@ -6,7 +6,7 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 
 ## Current Phase 1 capabilities
 
-- Next.js dashboard with API connection state, indicator cards, historical sparklines, normalized cross-indicator comparisons, archive health, and an upstream revision-audit table.
+- Next.js dashboard with API connection state, indicator cards, historical sparklines, normalized cross-indicator comparisons, archive health, upstream revision audit and a per-indicator source-quality matrix.
 - FastAPI endpoints for health, a macro-indicator catalog, a best-effort overview, history, data quality, and a provisional U.S. score.
 - U.S. indicators: Federal Funds Effective Rate, CPI inflation (calculated year over year), and unemployment rate.
 - India-related indicators: quarterly real GDP growth, annual consumer-price inflation, Economic Policy Uncertainty Index, INR per USD exchange rate, and real effective exchange rate.
@@ -153,3 +153,6 @@ The **Archive Macro Observations** GitHub Actions workflow can be run manually o
 ## Source revision audit
 
 The dashboard's Source Revision Audit panel reads `GET /api/macro/revisions/{indicator_key}?limit=20`. It shows the observation date whose stored value changed, the previous and revised source-native values, their difference, and when Arthvest detected the change. A first-time archive import is not recorded as a revision; the same observation date must be fetched again with a changed upstream value.
+
+
+The Source Coverage & Freshness section also includes a per-indicator quality matrix that joins each latest reading and observation age to the live data-quality endpoint and, when the database is configured and reachable, the most recent recorded archive fetch status.
