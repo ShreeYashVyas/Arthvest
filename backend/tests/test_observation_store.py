@@ -73,3 +73,51 @@ def test_failed_fetch_is_recorded_without_erasing_archived_observations(
     assert checks[0]["error_code"] == "request-failed"
     assert checks[1]["status"] == "success"
     assert len(archive) == 2
+
+
+def test_live_fred_fetch_is_archived_through_the_service_path(
+    monkeypatch, tmp_path
+) -> None:
+    from app.services import macro_service
+
+    series_id = "ARCHIVEINTEGRATIONTEST"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'fetch-path.db'}")
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self) -> bytes:
+            return (
+                f"observation_date,{series_id}\n"
+                "2026-08-01,3.2\n"
+                "2026-09-01,3.1\n"
+            ).encode("utf-8")
+
+    def fake_urlopen(_request, timeout: int):
+        assert timeout == macro_service.REQUEST_TIMEOUT_SECONDS
+        return FakeResponse()
+
+    monkeypatch.setattr(macro_service, "urlopen", fake_urlopen)
+    with macro_service._cache_lock:
+        macro_service._series_cache.pop(series_id, None)
+
+    observations, retrieved_at = macro_service._fetch_fred_series(series_id)
+
+    assert observations == [("2026-08-01", 3.2), ("2026-09-01", 3.1)]
+    archived = store.list_archived_observations(series_id, limit=10)
+    checks = store.list_source_checks(limit=10)
+    assert [item["source_value"] for item in archived] == [3.2, 3.1]
+    assert checks[0]["series_id"] == series_id
+    assert checks[0]["status"] == "success"
+    assert checks[0]["observation_count"] == 2
+    assert checks[0]["latest_observation_date"] == "2026-09-01"
+    assert retrieved_at
+    with macro_service._cache_lock:
+        macro_service._series_cache.pop(series_id, None)
+
