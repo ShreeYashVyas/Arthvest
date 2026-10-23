@@ -33,6 +33,8 @@ def test_score_is_weighted_and_explainable() -> None:
     assert result["label"] == "mixed"
     assert sum(result["weights"].values()) == pytest.approx(1.0)
     assert sum(item["weighted_points"] for item in result["components"]) == pytest.approx(67.0)
+    assert result["threshold_rules"]["fed-funds"][0] == "value <= 2.00% -> score 85"
+    assert len(result["threshold_rules"]["us-inflation"]) == 5
     assert result["blockers"] == []
 
 
