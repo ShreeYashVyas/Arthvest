@@ -5,7 +5,7 @@ export type MacroIndicator = {
   observation_date: string;
   frequency: string;
   observation_age_days: number;
-  freshness_status: "fresh" | "stale";
+  freshness_status: "fresh" | "stale" | "in-progress";
   unit: string;
   source: string;
   source_url: string;
@@ -44,7 +44,7 @@ function isMacroIndicator(value: unknown): value is MacroIndicator {
     typeof data.frequency === "string" &&
     typeof data.observation_age_days === "number" &&
     Number.isInteger(data.observation_age_days) &&
-    (data.freshness_status === "fresh" || data.freshness_status === "stale") &&
+    (data.freshness_status === "fresh" || data.freshness_status === "stale" || data.freshness_status === "in-progress") &&
     typeof data.unit === "string" &&
     typeof data.source === "string" &&
     typeof data.source_url === "string" &&
@@ -220,10 +220,10 @@ export async function fetchMacroHistory(
 export type USMacroScoreComponent = {
   key: string;
   indicator: string;
-  status: "available" | "stale" | "unavailable";
+  status: "available" | "stale" | "in-progress" | "unavailable";
   value_percent: number | null;
   observation_date: string | null;
-  freshness_status: "fresh" | "stale" | null;
+  freshness_status: "fresh" | "stale" | "in-progress" | null;
   component_score: number | null;
   weight: number;
   weighted_points: number | null;
@@ -295,7 +295,7 @@ export async function fetchUSMacroScore(
 export type MacroQualityItem = {
   key: string;
   status: "available" | "unavailable";
-  freshness_status: "fresh" | "stale" | null;
+  freshness_status: "fresh" | "stale" | "in-progress" | null;
   observation_age_days: number | null;
   issue: string | null;
 };
@@ -307,6 +307,7 @@ export type MacroQuality = {
   unavailable_count: number;
   fresh_count: number;
   stale_count: number;
+  in_progress_count: number;
   coverage_percent: number;
   quality_status: "good" | "partial" | "unavailable";
   note: string;
@@ -323,6 +324,7 @@ function isMacroQuality(value: unknown): value is MacroQuality {
     typeof data.unavailable_count === "number" &&
     typeof data.fresh_count === "number" &&
     typeof data.stale_count === "number" &&
+    typeof data.in_progress_count === "number" &&
     typeof data.coverage_percent === "number" &&
     Number.isFinite(data.coverage_percent) &&
     ["good", "partial", "unavailable"].includes(String(data.quality_status)) &&
