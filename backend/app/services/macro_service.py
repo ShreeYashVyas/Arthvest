@@ -222,14 +222,19 @@ def fetch_macro_indicator(indicator_key: str) -> dict[str, str | float]:
             )
         value = round((latest_value / prior_year_value - 1) * 100, 2)
 
-    observation_day = _observation_period_end(
+    today = datetime.now(timezone.utc).date()
+    source_date = datetime.strptime(observation_date, "%Y-%m-%d").date()
+    if source_date > today:
+        raise MacroDataError(f"FRED returned a future observation date for {series_id}")
+
+    # Some monthly and quarterly series timestamp a whole period using its
+    # first day. If the current period is not over yet, its period-end age is
+    # zero; it should not be rejected merely because that period end is future.
+    observation_period_end = _observation_period_end(
         observation_date,
         config["frequency"],
     )
-    today = datetime.now(timezone.utc).date()
-    age_days = (today - observation_day).days
-    if age_days < 0:
-        raise MacroDataError(f"FRED returned a future observation date for {series_id}")
+    age_days = max((today - observation_period_end).days, 0)
 
     freshness_status = (
         "fresh" if age_days <= int(config["max_age_days"]) else "stale"
