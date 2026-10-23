@@ -311,12 +311,14 @@ export default function Home() {
                       <span className="text-[10px] uppercase tracking-[0.14em] text-muted">{item.category}</span>
                       <span
                         className={`shrink-0 rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.1em] ${
-                          item.status === "available"
+                          item.status === "available" && item.data?.freshness_status === "fresh"
                             ? "border-accent/25 bg-accent/5 text-accent"
                             : "border-amber-300/25 bg-amber-300/5 text-amber-200"
                         }`}
                       >
-                        {item.status}
+                        {item.status === "unavailable"
+                          ? "unavailable"
+                          : item.data?.freshness_status ?? "unknown"}
                       </span>
                     </div>
 
@@ -340,6 +342,9 @@ export default function Home() {
                               month: "short",
                               year: "numeric",
                             })}
+                          </div>
+                          <div className="mt-1 text-[10px] text-muted">
+                            {item.data.observation_age_days} calendar days since observation
                           </div>
                         </div>
                         {item.data.calculation ? (
