@@ -60,7 +60,7 @@ def test_inflation_is_calculated_from_cpi_year_over_year(monkeypatch: pytest.Mon
     result = macro_service.fetch_macro_indicator("us-inflation")
 
     assert result["observation_date"] == "2026-09-01"
-    assert result["value_percent"] == 3.0
+    assert result["value"] == 3.0
     assert result["unit"] == "percent year over year"
     assert result["series_id"] == "CPIAUCSL"
 
