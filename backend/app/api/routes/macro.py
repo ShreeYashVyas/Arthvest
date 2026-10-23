@@ -35,6 +35,7 @@ OVERVIEW_CATEGORIES = {
     "us-inflation": "Global economy",
     "us-unemployment": "Global economy",
     "india-gdp-growth": "Indian economy",
+    "india-cpi-inflation-annual": "Indian economy",
     "india-policy-uncertainty": "Indian economy",
     "usd-inr": "FX & commodities",
     "india-reer": "FX & commodities",
