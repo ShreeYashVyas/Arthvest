@@ -4,6 +4,7 @@ import pytest
 
 from app.services.scoring_service import (
     SCORE_WEIGHTS,
+    _component_score,
     calculate_us_conditions_score,
 )
 
@@ -95,3 +96,40 @@ def test_thresholds_are_deterministic() -> None:
     )
     assert lower_component["component_score"] == 75.0
     assert higher_component["component_score"] == 60.0
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "expected"),
+    [
+        ("fed-funds", 2.00, 85.0),
+        ("fed-funds", 2.01, 75.0),
+        ("fed-funds", 3.50, 75.0),
+        ("fed-funds", 3.51, 60.0),
+        ("fed-funds", 4.50, 60.0),
+        ("fed-funds", 4.51, 40.0),
+        ("fed-funds", 5.50, 40.0),
+        ("fed-funds", 5.51, 20.0),
+        ("us-inflation", 2.00, 90.0),
+        ("us-inflation", 2.01, 80.0),
+        ("us-inflation", 3.00, 80.0),
+        ("us-inflation", 3.01, 65.0),
+        ("us-inflation", 4.00, 65.0),
+        ("us-inflation", 4.01, 45.0),
+        ("us-inflation", 5.00, 45.0),
+        ("us-inflation", 5.01, 25.0),
+        ("us-unemployment", 3.50, 85.0),
+        ("us-unemployment", 3.51, 75.0),
+        ("us-unemployment", 4.50, 75.0),
+        ("us-unemployment", 4.51, 55.0),
+        ("us-unemployment", 5.50, 55.0),
+        ("us-unemployment", 5.51, 35.0),
+        ("us-unemployment", 6.50, 35.0),
+        ("us-unemployment", 6.51, 20.0),
+    ],
+)
+def test_all_scoring_threshold_boundaries(
+    key: str,
+    value: float,
+    expected: float,
+) -> None:
+    assert _component_score(key, value) == expected
