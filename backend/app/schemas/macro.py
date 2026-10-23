@@ -108,6 +108,7 @@ class MacroHistoryResponse(BaseModel):
     """Historical points for one indicator, with the series definition attached."""
 
     generated_at: datetime
+    retrieved_at: datetime
     key: str
     indicator: str
     series_id: str
