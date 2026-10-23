@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchFederalFundsRate, type MacroIndicator } from "@/lib/api";
+import { fetchMacroOverview, type MacroOverview } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -72,7 +72,7 @@ export default function Home() {
   const [serviceState, setServiceState] = useState<ServiceState>("checking");
   const [checkedAt, setCheckedAt] = useState<string>("—");
   const [retry, setRetry] = useState(0);
-  const [fedFunds, setFedFunds] = useState<MacroIndicator | null>(null);
+  const [macroOverview, setMacroOverview] = useState<MacroOverview | null>(null);
   const [macroLoading, setMacroLoading] = useState(true);
   const [macroError, setMacroError] = useState<string | null>(null);
 
@@ -85,10 +85,10 @@ export default function Home() {
       process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
     ).replace(/\/$/, "");
 
-    fetchFederalFundsRate(controller.signal)
+    fetchMacroOverview(controller.signal)
       .then((data) => {
         if (!active) return;
-        setFedFunds(data);
+        setMacroOverview(data);
         setMacroError(null);
       })
       .catch((error: unknown) => {
@@ -265,16 +265,18 @@ export default function Home() {
         >
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">Data connection / 01</div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">Data connections / 01</div>
               <h2 id="macro-observation-title" className="mt-2 text-xl font-medium text-white">
-                Federal Funds Effective Rate
+                Macro indicator board
               </h2>
-              <p className="mt-2 text-sm text-muted">
-                The latest available observation from the Federal Reserve Bank of St. Louis (FRED).
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                Source-attributed U.S. indicators to establish the first working data pipeline. Each card shows the source observation date, not a real-time market quote.
               </p>
             </div>
             <span className="rounded-full border border-line px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-muted">
-              Series FEDFUNDS
+              {macroOverview
+                ? `${macroOverview.available_count} / ${macroOverview.total_count} available`
+                : "Loading sources"}
             </span>
           </div>
 
@@ -282,7 +284,7 @@ export default function Home() {
             {macroLoading ? (
               <div role="status" className="flex items-center gap-3 py-5 text-sm text-muted">
                 <RefreshCw size={16} className="animate-spin" />
-                Fetching the latest available observation…
+                Fetching macro observations…
               </div>
             ) : macroError ? (
               <div role="status" className="flex flex-col items-start gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -298,59 +300,92 @@ export default function Home() {
                   <RefreshCw size={13} /> Retry data
                 </button>
               </div>
-            ) : fedFunds ? (
-              <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
-                <div>
-                  <div className="text-xs text-muted">Effective rate</div>
-                  <div className="mt-2 flex items-baseline gap-2">
-                    <span className="text-5xl font-light tracking-tight text-white sm:text-6xl">
-                      {fedFunds.value_percent.toFixed(2)}
-                    </span>
-                    <span className="text-lg text-accent">%</span>
-                  </div>
-                  <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-accent/20 bg-accent/5 px-2.5 py-1.5 text-xs text-accent">
-                    <CheckCircle2 size={13} /> Data retrieved successfully
-                  </div>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-line bg-[#0B1017] p-4">
-                    <div className="text-[10px] uppercase tracking-[0.14em] text-muted">Observation date</div>
-                    <div className="mt-2 text-sm font-medium text-white">
-                      {new Date(fedFunds.observation_date + "T00:00:00").toLocaleDateString("en-IN", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+            ) : macroOverview ? (
+              <div className="grid gap-4 lg:grid-cols-3">
+                {macroOverview.indicators.map((item) => (
+                  <article
+                    key={item.key}
+                    className="flex min-h-[260px] flex-col rounded-xl border border-line bg-[#0B1017] p-4 sm:p-5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-muted">{item.category}</span>
+                      <span
+                        className={`shrink-0 rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.1em] ${
+                          item.status === "available"
+                            ? "border-accent/25 bg-accent/5 text-accent"
+                            : "border-amber-300/25 bg-amber-300/5 text-amber-200"
+                        }`}
+                      >
+                        {item.status}
+                      </span>
                     </div>
-                    <div className="mt-1 text-xs text-muted">Source reporting date, not a real-time quote</div>
-                  </div>
-                  <div className="rounded-xl border border-line bg-[#0B1017] p-4">
-                    <div className="text-[10px] uppercase tracking-[0.14em] text-muted">Retrieved at</div>
-                    <div className="mt-2 text-sm font-medium text-white">
-                      {new Date(fedFunds.retrieved_at).toLocaleString("en-IN", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
-                    </div>
-                    <div className="mt-1 text-xs text-muted">Timestamp returned by Arthvest API</div>
-                  </div>
-                  <div className="rounded-xl border border-line bg-[#0B1017] p-4 sm:col-span-2">
-                    <div className="text-[10px] uppercase tracking-[0.14em] text-muted">Source</div>
-                    <a
-                      href={fedFunds.source_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-flex items-center gap-2 text-sm text-slate-200 underline decoration-line underline-offset-4 transition hover:text-accent"
-                    >
-                      {fedFunds.source} <ArrowUpRight size={13} />
-                    </a>
-                    <div className="mt-1 text-xs text-muted">Series: {fedFunds.series_id} · Unit: {fedFunds.unit}</div>
-                  </div>
-                </div>
+
+                    <h3 className="mt-4 min-h-10 text-sm font-medium leading-5 text-white">
+                      {item.data?.indicator ?? item.key}
+                    </h3>
+
+                    {item.data ? (
+                      <>
+                        <div className="mt-3 flex items-baseline gap-2">
+                          <span className="text-4xl font-light tracking-tight text-white">
+                            {item.data.value_percent.toFixed(2)}
+                          </span>
+                          <span className="text-sm text-accent">%</span>
+                        </div>
+                        <div className="mt-4 border-t border-line pt-3">
+                          <div className="text-[10px] uppercase tracking-[0.12em] text-muted">Observation date</div>
+                          <div className="mt-1 text-xs font-medium text-slate-200">
+                            {new Date(item.data.observation_date + "T00:00:00").toLocaleDateString("en-IN", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </div>
+                        </div>
+                        {item.data.calculation ? (
+                          <p className="mt-3 text-[11px] leading-5 text-muted">{item.data.calculation}</p>
+                        ) : null}
+                        <div className="mt-auto pt-4">
+                          <a
+                            href={item.data.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs text-slate-300 underline decoration-line underline-offset-4 transition hover:text-accent"
+                          >
+                            {item.data.source} <ArrowUpRight size={12} />
+                          </a>
+                          <div className="mt-2 text-[10px] text-muted">
+                            {item.data.series_id} · Retrieved {new Date(item.data.retrieved_at).toLocaleString("en-IN", {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-4 rounded-lg border border-line px-3 py-4">
+                        <div className="text-lg font-light text-amber-200">Unavailable</div>
+                        <p className="mt-2 text-xs leading-5 text-muted">
+                          {item.error ?? "No validated source observation is available."}
+                        </p>
+                      </div>
+                    )}
+                  </article>
+                ))}
               </div>
             ) : (
-              <p className="py-4 text-sm text-muted">No observation is available to display.</p>
+              <p className="py-4 text-sm text-muted">No macro overview is available.</p>
             )}
+
+            {macroOverview ? (
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-[10px] text-muted">
+                <span>Partial source failures do not hide the other indicators.</span>
+                <span>Snapshot generated {new Date(macroOverview.generated_at).toLocaleString("en-IN", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}</span>
+              </div>
+            ) : null}
           </div>
         </section>
 
