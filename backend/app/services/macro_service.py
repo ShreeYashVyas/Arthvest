@@ -251,11 +251,15 @@ def fetch_macro_indicator(indicator_key: str) -> dict[str, str | float]:
         observation_date,
         config["frequency"],
     )
+    period_in_progress = observation_period_end > today
     age_days = max((today - observation_period_end).days, 0)
 
-    freshness_status = (
-        "fresh" if age_days <= int(config["max_age_days"]) else "stale"
-    )
+    if period_in_progress:
+        freshness_status = "in-progress"
+    else:
+        freshness_status = (
+            "fresh" if age_days <= int(config["max_age_days"]) else "stale"
+        )
 
     return {
         "indicator": config["indicator"],
