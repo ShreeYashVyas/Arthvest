@@ -66,6 +66,7 @@ def test_score_is_withheld_when_an_input_is_missing() -> None:
         item for item in result["components"] if item["key"] == "us-unemployment"
     )
     assert component["status"] == "unavailable"
+    assert any("test source failure" in blocker for blocker in result["blockers"])
 
 
 def test_non_finite_input_is_not_scored() -> None:
