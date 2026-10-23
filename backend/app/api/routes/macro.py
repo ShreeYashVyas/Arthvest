@@ -34,6 +34,9 @@ OVERVIEW_CATEGORIES = {
     "fed-funds": "Global liquidity",
     "us-inflation": "Global economy",
     "us-unemployment": "Global economy",
+    "india-policy-uncertainty": "Indian economy",
+    "usd-inr": "FX & commodities",
+    "india-reer": "FX & commodities",
 }
 
 
