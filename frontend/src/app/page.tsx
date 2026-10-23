@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchFederalFundsRate, type MacroIndicator } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -71,12 +72,34 @@ export default function Home() {
   const [serviceState, setServiceState] = useState<ServiceState>("checking");
   const [checkedAt, setCheckedAt] = useState<string>("—");
   const [retry, setRetry] = useState(0);
+  const [fedFunds, setFedFunds] = useState<MacroIndicator | null>(null);
+  const [macroLoading, setMacroLoading] = useState(true);
+  const [macroError, setMacroError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+    setMacroLoading(true);
+    setMacroError(null);
     const baseUrl = (
       process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
     ).replace(/\/$/, "");
+
+    fetchFederalFundsRate(controller.signal)
+      .then((data) => {
+        if (!active) return;
+        setFedFunds(data);
+        setMacroError(null);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setMacroError(
+          error instanceof Error ? error.message : "Unable to load macro data.",
+        );
+      })
+      .finally(() => {
+        if (active) setMacroLoading(false);
+      });
 
     fetch(`${baseUrl}/health`, { cache: "no-store" })
       .then((response) => {
@@ -96,6 +119,7 @@ export default function Home() {
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [retry]);
 
@@ -232,6 +256,101 @@ export default function Home() {
                 })}
               </div>
             </div>
+          </div>
+        </section>
+
+        <section
+          aria-labelledby="macro-observation-title"
+          className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/70"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">Data connection / 01</div>
+              <h2 id="macro-observation-title" className="mt-2 text-xl font-medium text-white">
+                Federal Funds Effective Rate
+              </h2>
+              <p className="mt-2 text-sm text-muted">
+                The latest available observation from the Federal Reserve Bank of St. Louis (FRED).
+              </p>
+            </div>
+            <span className="rounded-full border border-line px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-muted">
+              Series FEDFUNDS
+            </span>
+          </div>
+
+          <div className="p-5 sm:p-7">
+            {macroLoading ? (
+              <div role="status" className="flex items-center gap-3 py-5 text-sm text-muted">
+                <RefreshCw size={16} className="animate-spin" />
+                Fetching the latest available observation…
+              </div>
+            ) : macroError ? (
+              <div role="status" className="flex flex-col items-start gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="max-w-2xl text-sm leading-6 text-amber-200">{macroError}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMacroLoading(true);
+                    setRetry((value) => value + 1);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-slate-200 transition hover:border-accent/50 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
+                >
+                  <RefreshCw size={13} /> Retry data
+                </button>
+              </div>
+            ) : fedFunds ? (
+              <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+                <div>
+                  <div className="text-xs text-muted">Effective rate</div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-5xl font-light tracking-tight text-white sm:text-6xl">
+                      {fedFunds.value_percent.toFixed(2)}
+                    </span>
+                    <span className="text-lg text-accent">%</span>
+                  </div>
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-accent/20 bg-accent/5 px-2.5 py-1.5 text-xs text-accent">
+                    <CheckCircle2 size={13} /> Data retrieved successfully
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-line bg-[#0B1017] p-4">
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-muted">Observation date</div>
+                    <div className="mt-2 text-sm font-medium text-white">
+                      {new Date(fedFunds.observation_date + "T00:00:00").toLocaleDateString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </div>
+                    <div className="mt-1 text-xs text-muted">Source reporting date, not a real-time quote</div>
+                  </div>
+                  <div className="rounded-xl border border-line bg-[#0B1017] p-4">
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-muted">Retrieved at</div>
+                    <div className="mt-2 text-sm font-medium text-white">
+                      {new Date(fedFunds.retrieved_at).toLocaleString("en-IN", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </div>
+                    <div className="mt-1 text-xs text-muted">Timestamp returned by Arthvest API</div>
+                  </div>
+                  <div className="rounded-xl border border-line bg-[#0B1017] p-4 sm:col-span-2">
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-muted">Source</div>
+                    <a
+                      href={fedFunds.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex items-center gap-2 text-sm text-slate-200 underline decoration-line underline-offset-4 transition hover:text-accent"
+                    >
+                      {fedFunds.source} <ArrowUpRight size={13} />
+                    </a>
+                    <div className="mt-1 text-xs text-muted">Series: {fedFunds.series_id} · Unit: {fedFunds.unit}</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="py-4 text-sm text-muted">No observation is available to display.</p>
+            )}
           </div>
         </section>
 
