@@ -180,7 +180,7 @@ export async function fetchMacroHistory(
   limit = 12,
   signal?: AbortSignal,
 ): Promise<MacroHistory> {
-  const allowedKeys = ["fed-funds", "us-inflation", "us-unemployment"];
+  const allowedKeys = ["fed-funds", "us-inflation", "us-unemployment", "india-policy-uncertainty", "usd-inr", "india-reer"];
   if (!allowedKeys.includes(key)) {
     throw new Error("Unsupported macro history key.");
   }
@@ -269,5 +269,62 @@ export async function fetchUSMacroScore(
     throw new Error("Macro score API returned an unexpected response format.");
   }
 
+  return payload;
+}
+
+
+export type MacroQualityItem = {
+  key: string;
+  status: "available" | "unavailable";
+  freshness_status: "fresh" | "stale" | null;
+  observation_age_days: number | null;
+  issue: string | null;
+};
+
+export type MacroQuality = {
+  generated_at: string;
+  total_count: number;
+  available_count: number;
+  unavailable_count: number;
+  fresh_count: number;
+  stale_count: number;
+  coverage_percent: number;
+  quality_status: "good" | "partial" | "unavailable";
+  note: string;
+  indicators: MacroQualityItem[];
+};
+
+function isMacroQuality(value: unknown): value is MacroQuality {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  return (
+    typeof data.generated_at === "string" &&
+    typeof data.total_count === "number" &&
+    typeof data.available_count === "number" &&
+    typeof data.unavailable_count === "number" &&
+    typeof data.fresh_count === "number" &&
+    typeof data.stale_count === "number" &&
+    typeof data.coverage_percent === "number" &&
+    Number.isFinite(data.coverage_percent) &&
+    ["good", "partial", "unavailable"].includes(String(data.quality_status)) &&
+    typeof data.note === "string" &&
+    Array.isArray(data.indicators)
+  );
+}
+
+export async function fetchMacroQuality(
+  signal?: AbortSignal,
+): Promise<MacroQuality> {
+  const response = await fetch(API_BASE_URL + "/api/macro/quality", {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error("The macro data-quality summary is temporarily unavailable.");
+  }
+  const payload: unknown = await response.json();
+  if (!isMacroQuality(payload)) {
+    throw new Error("Data-quality API returned an unexpected response format.");
+  }
   return payload;
 }
