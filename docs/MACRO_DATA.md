@@ -29,6 +29,22 @@ This document describes the current Phase 1 data inputs. Source readings are obs
 
 Series metadata and links are returned dynamically by `/api/macro/catalog`.
 
+## Manual upstream source sanity check
+
+The public FRED series pages below were checked on **2026-10-23** to confirm that each configured series ID resolves to the expected macroeconomic concept and has a recent published observation. This is a manual source-page check, not an automated runtime guarantee; the application still validates every fetched CSV response and reports unavailable or stale data rather than assuming a source is healthy.
+
+| Arthvest key | Upstream series page | Latest observation shown during check |
+|---|---|---|
+| `fed-funds` | [FEDFUNDS](https://fred.stlouisfed.org/series/FEDFUNDS) | September 2026, monthly |
+| `us-inflation` | [CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) | September 2026, monthly CPI index; Arthvest derives year-over-year inflation |
+| `us-unemployment` | [UNRATE](https://fred.stlouisfed.org/series/UNRATE) | September 2026, monthly |
+| `india-gdp-growth` | [INDGDPRQPSMEI](https://fred.stlouisfed.org/series/INDGDPRQPSMEI) | Q2 2026, quarterly year-over-year growth |
+| `india-cpi-inflation-annual` | [FPCPITOTLZGIND](https://fred.stlouisfed.org/series/FPCPITOTLZGIND) | 2025, annual |
+| `india-policy-uncertainty` | [INDEPUINDXM](https://fred.stlouisfed.org/series/INDEPUINDXM) | September 2026, monthly |
+| `usd-inr` | [DEXINUS](https://fred.stlouisfed.org/series/DEXINUS) | October 16, 2026, latest date shown in the FRED data table |
+| `india-reer` | [CCRETT01INM661N](https://fred.stlouisfed.org/series/CCRETT01INM661N) | August 2026, monthly |
+
+
 ## Calculation rules
 
 - U.S. CPI inflation is calculated as the 12-month percentage change in `CPIAUCSL`, using the same observation month in the prior year.
