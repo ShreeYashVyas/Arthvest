@@ -80,6 +80,19 @@ cd backend
 python -m pytest -q
 ```
 
+## Live source sanity check
+
+For a deliberate, networked check of the configured FRED feeds, run the diagnostic from the backend directory:
+
+```powershell
+cd backend
+python scripts/check_data_sources.py
+```
+
+The diagnostic fetches the eight configured series, displays each latest validated observation and freshness state, and exits non-zero if a source cannot be fetched or validated. A `stale` or `in-progress` observation is reported separately from a connection failure. It needs internet access and is not part of normal CI.
+
+You can also trigger **Live Macro Source Check** from the repository's **Actions** tab using **Run workflow**. This workflow is manual by design, so routine pull requests and pushes remain independent of upstream release timing.
+
 ## API endpoints
 
 | Endpoint | Purpose |
