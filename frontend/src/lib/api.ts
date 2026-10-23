@@ -184,7 +184,16 @@ export async function fetchMacroHistory(
   limit = 12,
   signal?: AbortSignal,
 ): Promise<MacroHistory> {
-  const allowedKeys = ["fed-funds", "us-inflation", "us-unemployment", "india-gdp-growth", "india-policy-uncertainty", "usd-inr", "india-reer"];
+  const allowedKeys = [
+    "fed-funds",
+    "us-inflation",
+    "us-unemployment",
+    "india-gdp-growth",
+    "india-cpi-inflation-annual",
+    "india-policy-uncertainty",
+    "usd-inr",
+    "india-reer",
+  ];
   if (!allowedKeys.includes(key)) {
     throw new Error("Unsupported macro history key.");
   }
