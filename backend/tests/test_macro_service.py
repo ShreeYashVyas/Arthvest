@@ -98,3 +98,52 @@ def test_future_observation_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None
 
     with pytest.raises(MacroDataError, match="future observation"):
         macro_service.fetch_macro_indicator("fed-funds")
+
+
+
+def test_history_returns_latest_observations_with_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    observations = [
+        ("2026-01-01", 3.1),
+        ("2026-02-01", 3.2),
+        ("2026-03-01", 3.3),
+        ("2026-04-01", 3.4),
+    ]
+    monkeypatch.setattr(
+        macro_service,
+        "_fetch_fred_series",
+        lambda _series_id: (observations, "2026-10-23T00:00:00+00:00"),
+    )
+
+    result = macro_service.fetch_macro_history("fed-funds", limit=2)
+
+    assert result["returned_count"] == 2
+    assert result["points"] == [
+        {"observation_date": "2026-03-01", "value": 3.3},
+        {"observation_date": "2026-04-01", "value": 3.4},
+    ]
+
+
+def test_history_calculates_inflation_series(monkeypatch: pytest.MonkeyPatch) -> None:
+    observations = [
+        ("2025-01-01", 200.0),
+        ("2025-02-01", 202.0),
+        ("2026-01-01", 210.0),
+        ("2026-02-01", 212.1),
+    ]
+    monkeypatch.setattr(
+        macro_service,
+        "_fetch_fred_series",
+        lambda _series_id: (observations, "2026-10-23T00:00:00+00:00"),
+    )
+
+    result = macro_service.fetch_macro_history("us-inflation", limit=12)
+
+    assert result["points"] == [
+        {"observation_date": "2026-01-01", "value": 5.0},
+        {"observation_date": "2026-02-01", "value": 5.0},
+    ]
+
+
+def test_history_rejects_out_of_range_limit() -> None:
+    with pytest.raises(MacroDataError, match="between 1 and 60"):
+        macro_service.fetch_macro_history("fed-funds", limit=100)
