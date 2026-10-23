@@ -66,7 +66,7 @@ INDICATORS: dict[str, dict[str, str]] = {
         "unit": "percent (annual)",
         "source": "World Bank via FRED",
         "calculation": "Latest published annual percentage change in consumer prices; this is annual data, not a monthly inflation reading.",
-        "max_age_days": "550",
+        "max_age_days": "800",
     },
     "india-policy-uncertainty": {
         "indicator": "India Economic Policy Uncertainty Index",
