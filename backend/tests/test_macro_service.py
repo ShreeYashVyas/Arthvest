@@ -147,3 +147,35 @@ def test_history_calculates_inflation_series(monkeypatch: pytest.MonkeyPatch) ->
 def test_history_rejects_out_of_range_limit() -> None:
     with pytest.raises(MacroDataError, match="between 1 and 60"):
         macro_service.fetch_macro_history("fed-funds", limit=100)
+
+
+
+@pytest.mark.parametrize(
+    ("key", "series_id", "observation_date", "expected_unit", "value"),
+    [
+        ("india-policy-uncertainty", "INDEPUINDXM", "2026-09-01", "index", 184.61),
+        ("usd-inr", "DEXINUS", "2026-10-16", "INR per USD", 94.96),
+        ("india-reer", "CCRETT01INM661N", "2026-08-01", "index (2015=100)", 91.47),
+    ],
+)
+def test_india_and_fx_series_keep_their_native_units(
+    monkeypatch: pytest.MonkeyPatch,
+    key: str,
+    series_id: str,
+    observation_date: str,
+    expected_unit: str,
+    value: float,
+) -> None:
+    monkeypatch.setattr(
+        macro_service,
+        "_fetch_fred_series",
+        lambda _series_id: ([(observation_date, value)], "2026-10-23T00:00:00+00:00"),
+    )
+
+    result = macro_service.fetch_macro_indicator(key)
+
+    assert result["series_id"] == series_id
+    assert result["observation_date"] == observation_date
+    assert result["unit"] == expected_unit
+    assert result["value"] == value
+    assert "value_percent" not in result
