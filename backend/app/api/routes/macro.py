@@ -4,11 +4,12 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 
 from app.schemas.macro import (
     MacroCatalogResponse,
+    MacroHistoryResponse,
     MacroIndicatorMetadata,
     MacroIndicatorResponse,
     MacroOverviewItem,
@@ -19,6 +20,7 @@ from app.schemas.macro import (
 from app.services.macro_service import (
     INDICATORS,
     MacroDataError,
+    fetch_macro_history,
     fetch_macro_indicator,
     fetch_fed_funds_rate,
 )
@@ -193,3 +195,30 @@ def get_macro_quality() -> MacroQualityResponse:
         note=note,
         indicators=quality_items,
     )
+
+
+
+@router.get(
+    "/history/{indicator_key}",
+    response_model=MacroHistoryResponse,
+    summary="Get historical observations for one macro indicator",
+)
+def get_macro_history(
+    indicator_key: str,
+    limit: int = Query(default=12, ge=1, le=60),
+) -> MacroHistoryResponse:
+    """Return at most 60 validated historical points for a supported indicator."""
+    try:
+        return MacroHistoryResponse.model_validate(
+            fetch_macro_history(indicator_key, limit=limit)
+        )
+    except MacroDataError as exc:
+        logger.warning("Macro history unavailable for %s: %s", indicator_key, exc)
+        raise HTTPException(
+            status_code=404 if "Unsupported macro indicator" in str(exc) else 502,
+            detail=(
+                "Unsupported macro indicator."
+                if "Unsupported macro indicator" in str(exc)
+                else "Historical macro observations are temporarily unavailable."
+            ),
+        ) from exc
