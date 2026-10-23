@@ -144,6 +144,7 @@ class USMacroScoreResponse(BaseModel):
     label: Literal["supportive", "mixed", "pressured", "insufficient-data"]
     provisional: bool = True
     weights: dict[str, float]
+    threshold_rules: dict[str, list[str]]
     components: list[MacroScoreComponent]
     methodology: str
     limitations: list[str]
