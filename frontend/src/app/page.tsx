@@ -590,7 +590,7 @@ export default function Home() {
                 Macro indicator board
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-                Source-attributed U.S. and Indian macroeconomic series plus foreign-exchange indicators. Period labels follow each source's publishing frequency; these are observations, not streaming market quotes.
+                Source-attributed U.S. and Indian macroeconomic series plus foreign-exchange indicators. Period labels follow each source&apos;s publishing frequency; these are observations, not streaming market quotes.
               </p>
             </div>
             <span className="rounded-full border border-line px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-muted">
