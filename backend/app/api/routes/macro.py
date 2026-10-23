@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 
+from app.services import observation_store
 from app.schemas.macro import (
     MacroCatalogResponse,
     MacroHistoryResponse,
@@ -212,6 +213,91 @@ def get_macro_quality() -> MacroQualityResponse:
         note=note,
         indicators=quality_items,
     )
+
+
+
+@router.get("/storage", summary="Summarize optional database readiness and archive counts")
+def get_storage_status() -> dict[str, object]:
+    """Report persistence status without exposing connection details."""
+    return observation_store.get_storage_summary()
+
+
+def _require_available_storage() -> None:
+    status = observation_store.get_storage_summary()
+    if not status["enabled"]:
+        raise HTTPException(
+            status_code=503,
+            detail="Persistence is not configured. Set DATABASE_URL to enable the observation archive.",
+        )
+    if not status["available"]:
+        raise HTTPException(status_code=503, detail="The observation database is currently unavailable.")
+
+
+@router.get("/source-checks", summary="List recent live-source fetch successes and failures")
+def get_source_checks(limit: int = Query(default=24, ge=1, le=100)) -> dict[str, object]:
+    """Return recorded upstream fetch outcomes when persistence is enabled."""
+    _require_available_storage()
+    try:
+        checks = observation_store.list_source_checks(limit)
+    except Exception as exc:
+        logger.warning("Could not read persisted source checks: %s", exc)
+        raise HTTPException(status_code=503, detail="Source-check history is temporarily unavailable.") from exc
+    return {"count": len(checks), "checks": checks}
+
+
+@router.get("/archive/{indicator_key}", summary="Read source observations retained in the database")
+def get_persisted_observations(
+    indicator_key: str,
+    limit: int = Query(default=12, ge=1, le=500),
+) -> dict[str, object]:
+    """Return archived source-native values, not derived display values."""
+    config = INDICATORS.get(indicator_key)
+    if config is None:
+        raise HTTPException(status_code=404, detail="Unsupported macro indicator.")
+    _require_available_storage()
+    try:
+        points = observation_store.list_archived_observations(config["series_id"], limit)
+    except Exception as exc:
+        logger.warning("Could not read archived observations for %s: %s", indicator_key, exc)
+        raise HTTPException(status_code=503, detail="Archived observations are temporarily unavailable.") from exc
+    value_semantics = (
+        "Raw CPI index values; these values are used to calculate the separate year-over-year inflation metric."
+        if config["series_id"] == "CPIAUCSL"
+        else "Source-native values from the original FRED series."
+    )
+    return {
+        "key": indicator_key,
+        "indicator": config["indicator"],
+        "series_id": config["series_id"],
+        "source_url": f"https://fred.stlouisfed.org/series/{config['series_id']}",
+        "frequency": config["frequency"],
+        "value_semantics": value_semantics,
+        "count": len(points),
+        "points": points,
+    }
+
+
+@router.get("/revisions/{indicator_key}", summary="List upstream revisions detected in archived observations")
+def get_observation_revisions(
+    indicator_key: str,
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict[str, object]:
+    """Return audit records when FRED changes a value for an existing observation date."""
+    config = INDICATORS.get(indicator_key)
+    if config is None:
+        raise HTTPException(status_code=404, detail="Unsupported macro indicator.")
+    _require_available_storage()
+    try:
+        revisions = observation_store.list_revisions(config["series_id"], limit)
+    except Exception as exc:
+        logger.warning("Could not read revisions for %s: %s", indicator_key, exc)
+        raise HTTPException(status_code=503, detail="Observation revision history is temporarily unavailable.") from exc
+    return {
+        "key": indicator_key,
+        "series_id": config["series_id"],
+        "count": len(revisions),
+        "revisions": revisions,
+    }
 
 
 

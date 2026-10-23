@@ -13,6 +13,10 @@ This document describes the current Phase 1 data inputs. Source readings are obs
 | GET | `/api/macro/history/{indicator_key}?limit=12` | Up to 60 latest historical observations |
 | GET | `/api/macro/fed-funds` | Federal Funds Rate compatibility endpoint |
 | GET | `/api/macro/score/us-conditions` | Provisional U.S.-only macro conditions subscore |
+| GET | `/api/macro/storage` | Optional database readiness and archive counts |
+| GET | `/api/macro/archive/{indicator_key}` | Archived source-native values (requires `DATABASE_URL`) |
+| GET | `/api/macro/revisions/{indicator_key}` | Detected upstream value revisions (requires `DATABASE_URL`) |
+| GET | `/api/macro/source-checks` | Recent upstream fetch outcomes (requires `DATABASE_URL`)
 
 ## Configured indicators
 
@@ -56,7 +60,7 @@ The public FRED series pages below were checked on **2026-10-23** to confirm tha
 - Freshness is measured from the end of the represented observation period, not the retrieval time: month-end for monthly data, quarter-end for quarterly data, year-end for annual data, and the observation date for daily data. The original source observation date is preserved in the API. When the source timestamp belongs to the current period, its period-age is clamped to zero and the observation is labelled `in-progress` until that period ends; source dates themselves must not be in the future.
 - The annual India CPI source uses a year-start timestamp for an annual observation; its freshness age is therefore computed from that year's end. The 550-day threshold allows for annual release timing, but remains a provisional operational check rather than a statement about economic significance.
 - Freshness thresholds are provisional operational checks, not statements about economic significance. The data-quality endpoint reports `fresh`, `stale`, `in-progress` and unavailable inputs separately.
-- FRED observations may be revised. Arthvest caches each fetched series in-process for 15 minutes; this is not a persistent database.
+- FRED observations may be revised. Arthvest caches each fetched series in-process for 15 minutes. If `DATABASE_URL` is configured, the service also archives fetched source observations by series and observation date, logs each upstream fetch outcome, and retains revision records whenever an existing source value changes. Re-fetching unchanged values updates last-seen metadata but does not create a revision. The archive stores source-native values (including CPIAUCSL index levels), separate from derived display calculations. If the database is unset or temporarily unavailable, live macro responses continue; persistence errors are logged rather than converting a successful feed into an API failure.
 
 ## Provisional U.S. subscore
 

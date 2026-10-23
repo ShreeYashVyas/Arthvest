@@ -11,7 +11,7 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 - U.S. indicators: Federal Funds Effective Rate, CPI inflation (calculated year over year), and unemployment rate.
 - India-related indicators: quarterly real GDP growth, annual consumer-price inflation, Economic Policy Uncertainty Index, INR per USD exchange rate, and real effective exchange rate.
 - Source observation dates, retrieval timestamps, native units, frequency-aware freshness and period-labelled historical trends.
-- In-process 15-minute source-series cache and parser/API/scoring tests.
+- In-process 15-minute source-series cache; optional SQLAlchemy persistence for source observations, upstream revisions, and fetch successes/failures.
 - GitHub Actions workflow for backend tests and frontend production build.
 
 ## Technology
@@ -93,6 +93,10 @@ The diagnostic fetches the eight configured series, displays each latest validat
 
 You can also trigger **Live Macro Source Check** from the repository's **Actions** tab using **Run workflow**. This workflow is manual by design, so routine pull requests and pushes remain independent of upstream release timing.
 
+## Optional persistent archive
+
+Live fetching works without a database. To retain source observations, detect upstream revisions, and record fetch failures across restarts, configure `DATABASE_URL` for PostgreSQL using a URL such as `postgresql+psycopg://USER:PASSWORD@HOST:5432/arthvest`. Provider URLs using `postgres://` or `postgresql://` are normalized automatically. Keep credentials in deployment secrets or an untracked `.env`; never commit real credentials. On the first storage operation, Arthvest creates its initial SQLAlchemy tables. Without `DATABASE_URL`, the `/api/macro/storage` endpoint reports persistence as disabled and archive endpoints return HTTP 503 while live macro endpoints continue.
+
 ## API endpoints
 
 | Endpoint | Purpose |
@@ -104,6 +108,10 @@ You can also trigger **Live Macro Source Check** from the repository's **Actions
 | `GET /api/macro/history/{indicator_key}?limit=12` | Historical observations; limit from 1 to 60 |
 | `GET /api/macro/fed-funds` | Federal Funds Rate endpoint |
 | `GET /api/macro/score/us-conditions` | Provisional U.S.-only macro conditions subscore |
+| `GET /api/macro/storage` | Database readiness and archive counts |
+| `GET /api/macro/archive/{indicator_key}?limit=12` | Stored source-native observations (requires `DATABASE_URL`) |
+| `GET /api/macro/revisions/{indicator_key}?limit=20` | Detected upstream value revisions (requires `DATABASE_URL`) |
+| `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)
 
 Indicator keys, formulas, sources and freshness thresholds are documented in [docs/MACRO_DATA.md](docs/MACRO_DATA.md).
 

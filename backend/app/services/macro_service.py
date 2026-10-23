@@ -5,6 +5,7 @@ observation date and the time this process last retrieved the upstream data.
 """
 
 import calendar
+import logging
 import csv
 import math
 import time
@@ -13,6 +14,10 @@ from io import StringIO
 from threading import Lock
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+from app.services import observation_store
+
+logger = logging.getLogger(__name__)
 
 FRED_GRAPH_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
 REQUEST_TIMEOUT_SECONDS = 15
@@ -101,6 +106,30 @@ INDICATORS: dict[str, dict[str, str]] = {
     },
 }
 
+def _indicator_key_for_series(series_id: str) -> str | None:
+    return next((key for key, config in INDICATORS.items() if config["series_id"] == series_id), None)
+
+
+def _record_failed_source_check(series_id: str, error_code: str, elapsed_ms: int) -> None:
+    try:
+        observation_store.record_source_failure(
+            _indicator_key_for_series(series_id), series_id, error_code, elapsed_ms
+        )
+    except Exception:
+        logger.warning("Could not persist failed source check for %s", series_id, exc_info=True)
+
+
+def _record_successful_source_check(
+    series_id: str, observations: list[tuple[str, float]], retrieved_at: str, elapsed_ms: int
+) -> None:
+    try:
+        observation_store.record_source_success(
+            _indicator_key_for_series(series_id), series_id, observations, retrieved_at, elapsed_ms
+        )
+    except Exception:
+        logger.warning("Could not persist source observations for %s", series_id, exc_info=True)
+
+
 
 class MacroDataError(RuntimeError):
     """Raised when upstream macro data is unavailable or invalid."""
@@ -167,6 +196,7 @@ def _fetch_fred_series(series_id: str) -> tuple[list[tuple[str, float]], str]:
             if cached and now - cached[0] < CACHE_TTL_SECONDS:
                 return list(cached[1]), cached[2]
 
+        fetch_started = time.monotonic()
         request = Request(
             FRED_GRAPH_URL.format(series_id=series_id),
             headers={"User-Agent": "Arthvest/0.1 (macro research dashboard)"},
@@ -175,15 +205,32 @@ def _fetch_fred_series(series_id: str) -> tuple[list[tuple[str, float]], str]:
             with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
                 status = getattr(response, "status", 200)
                 if status != 200:
+                    _record_failed_source_check(
+                        series_id, "http-status", int((time.monotonic() - fetch_started) * 1000)
+                    )
                     raise MacroDataError(f"FRED returned HTTP status {status}")
                 csv_text = response.read().decode("utf-8-sig")
         except (URLError, TimeoutError, OSError, UnicodeDecodeError) as exc:
+            _record_failed_source_check(
+                series_id, "request-failed", int((time.monotonic() - fetch_started) * 1000)
+            )
             raise MacroDataError(
                 f"Unable to retrieve {series_id} data from FRED"
             ) from exc
 
-        observations = _parse_fred_csv(csv_text, series_id)
+        try:
+            observations = _parse_fred_csv(csv_text, series_id)
+        except MacroDataError:
+            _record_failed_source_check(
+                series_id, "invalid-response", int((time.monotonic() - fetch_started) * 1000)
+            )
+            raise
+
         retrieved_at = datetime.now(timezone.utc).isoformat()
+        _record_successful_source_check(
+            series_id, observations, retrieved_at,
+            int((time.monotonic() - fetch_started) * 1000),
+        )
         with _cache_lock:
             _series_cache[series_id] = (
                 time.monotonic(),

@@ -25,3 +25,15 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ruff check --select E4,E7,E9,F app tests
 ```
+
+## Optional persistent archive
+
+Set `DATABASE_URL` to a PostgreSQL URL such as `postgresql+psycopg://USER:PASSWORD@HOST:5432/arthvest` to retain source observations, revisions, and source-fetch checks. Add it to private environment configuration, not Git. Leaving it unset is supported: live FRED requests still work, while archive endpoints return HTTP 503. Initial SQLAlchemy tables are created on the first storage operation.
+
+New endpoints:
+- `GET /api/macro/storage` — storage readiness and counts
+- `GET /api/macro/archive/{indicator_key}?limit=12` — current archived source values by observation date
+- `GET /api/macro/revisions/{indicator_key}?limit=20` — upstream value revisions
+- `GET /api/macro/source-checks?limit=24` — recent source fetch outcomes
+
+The archive stores source-native FRED values. For example, `CPIAUCSL` is the CPI index, not the derived year-over-year inflation rate. Persistence errors are logged but do not interrupt live feed delivery; check the storage endpoint to verify the database is available.
