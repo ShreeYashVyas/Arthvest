@@ -17,6 +17,7 @@ def _history_payload(key: str, limit: int) -> dict[str, object]:
         "indicator": "Indian Rupees per U.S. Dollar",
         "series_id": "DEXINUS",
         "unit": "INR per USD",
+        "frequency": "Daily, except non-publishing days",
         "source": "Board of Governors of the Federal Reserve System via FRED",
         "source_url": "https://fred.stlouisfed.org/series/DEXINUS",
         "calculation": "Latest available spot exchange-rate observation.",
