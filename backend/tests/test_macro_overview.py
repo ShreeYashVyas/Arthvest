@@ -17,6 +17,8 @@ def _sample_payload(key: str) -> dict[str, str | float]:
         "series_id": config["series_id"],
         "value_percent": value,
         "observation_date": "2026-09-01",
+        "observation_age_days": 52,
+        "freshness_status": "fresh",
         "unit": config["unit"],
         "source": config["source"],
         "source_url": f"https://fred.stlouisfed.org/series/{config['series_id']}",
