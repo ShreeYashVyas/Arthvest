@@ -2,6 +2,12 @@ name: Live Macro Source Check
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/live-macro-source-check.yml"
+      - "backend/app/services/macro_service.py"
+      - "backend/scripts/check_data_sources.py"
 
 permissions:
   contents: read
