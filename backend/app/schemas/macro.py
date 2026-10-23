@@ -95,3 +95,26 @@ class MacroQualityResponse(BaseModel):
     quality_status: Literal["good", "partial", "unavailable"]
     note: str
     indicators: list[MacroQualityItem]
+
+
+class MacroHistoryPoint(BaseModel):
+    """One dated point in a published or calculated macro series."""
+
+    observation_date: str
+    value: float = Field(allow_inf_nan=False)
+
+
+class MacroHistoryResponse(BaseModel):
+    """Historical points for one indicator, with the series definition attached."""
+
+    generated_at: datetime
+    key: str
+    indicator: str
+    series_id: str
+    unit: str
+    source: str
+    source_url: str
+    calculation: str
+    requested_limit: int = Field(ge=1, le=60)
+    returned_count: int = Field(ge=0)
+    points: list[MacroHistoryPoint]
