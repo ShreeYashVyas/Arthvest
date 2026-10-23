@@ -3,7 +3,6 @@
 import pytest
 
 from app.services.scoring_service import (
-    SCORE_WEIGHTS,
     _component_score,
     calculate_us_conditions_score,
 )
