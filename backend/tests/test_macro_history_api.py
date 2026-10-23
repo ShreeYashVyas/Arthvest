@@ -55,7 +55,7 @@ def test_history_route_rejects_limits_above_sixty() -> None:
 
 
 def test_history_route_returns_not_found_for_unknown_indicator(monkeypatch) -> None:
-    def fail(_key: str, _limit: int) -> dict[str, object]:
+    def fail(_key: str, limit: int) -> dict[str, object]:
         raise MacroDataError("Unsupported macro indicator: unknown")
 
     monkeypatch.setattr(macro_routes, "fetch_macro_history", fail)
