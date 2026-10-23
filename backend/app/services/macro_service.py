@@ -20,8 +20,8 @@ CACHE_TTL_SECONDS = 15 * 60
 INDICATORS: dict[str, dict[str, str]] = {
     "fed-funds": {
         "indicator": "Federal Funds Effective Rate",
-        "description": "Effective interest rate at which depository institutions lend reserve balances overnight.",
-        "frequency": "Daily, with source-published observations",
+        "description": "Monthly average effective interest rate on overnight reserve-balance lending between depository institutions.",
+        "frequency": "Monthly",
         "series_id": "FEDFUNDS",
         "unit": "percent",
         "source": "Board of Governors of the Federal Reserve System via FRED",
