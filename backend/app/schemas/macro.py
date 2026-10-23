@@ -13,7 +13,7 @@ class MacroIndicatorResponse(BaseModel):
 
     indicator: str
     series_id: str
-    value_percent: float = Field(allow_inf_nan=False)
+    value: float = Field(allow_inf_nan=False)
     observation_date: str
     observation_age_days: int = Field(ge=0)
     freshness_status: Literal["fresh", "stale"]
