@@ -262,3 +262,15 @@ def test_macro_quality_counts_in_progress_separately(monkeypatch) -> None:
     assert items["fed-funds"]["status"] == "available"
     assert items["fed-funds"]["freshness_status"] == "in-progress"
     assert "period that has not ended" in items["fed-funds"]["issue"]
+
+def test_fed_funds_route_maps_source_failure_to_bad_gateway(monkeypatch) -> None:
+    def failed_fetch() -> dict[str, object]:
+        raise MacroDataError("simulated upstream outage")
+
+    monkeypatch.setattr(macro_routes, "fetch_fed_funds_rate", failed_fetch)
+
+    response = client.get("/api/macro/fed-funds")
+
+    assert response.status_code == 502
+    assert "temporarily unavailable" in response.json()["detail"]
+
