@@ -202,3 +202,72 @@ export async function fetchMacroHistory(
   }
   return payload;
 }
+
+
+export type USMacroScoreComponent = {
+  key: string;
+  indicator: string;
+  status: "available" | "stale" | "unavailable";
+  value_percent: number | null;
+  observation_date: string | null;
+  freshness_status: "fresh" | "stale" | null;
+  component_score: number | null;
+  weight: number;
+  weighted_points: number | null;
+};
+
+export type USMacroScore = {
+  generated_at: string;
+  available: boolean;
+  score: number | null;
+  label: "supportive" | "mixed" | "pressured" | "insufficient-data";
+  provisional: boolean;
+  weights: Record<string, number>;
+  components: USMacroScoreComponent[];
+  methodology: string;
+  limitations: string[];
+  blockers: string[];
+};
+
+function isUSMacroScore(value: unknown): value is USMacroScore {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  return (
+    typeof data.generated_at === "string" &&
+    typeof data.available === "boolean" &&
+    (data.score === null ||
+      (typeof data.score === "number" && Number.isFinite(data.score))) &&
+    ["supportive", "mixed", "pressured", "insufficient-data"].includes(
+      String(data.label),
+    ) &&
+    typeof data.provisional === "boolean" &&
+    typeof data.weights === "object" &&
+    data.weights !== null &&
+    Array.isArray(data.components) &&
+    typeof data.methodology === "string" &&
+    Array.isArray(data.limitations) &&
+    data.limitations.every((item: unknown) => typeof item === "string") &&
+    Array.isArray(data.blockers) &&
+    data.blockers.every((item: unknown) => typeof item === "string")
+  );
+}
+
+export async function fetchUSMacroScore(
+  signal?: AbortSignal,
+): Promise<USMacroScore> {
+  const response = await fetch(API_BASE_URL + "/api/macro/score/us-conditions", {
+    cache: "no-store",
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error("The provisional U.S. macro score is temporarily unavailable.");
+  }
+
+  const payload: unknown = await response.json();
+  if (!isUSMacroScore(payload)) {
+    throw new Error("Macro score API returned an unexpected response format.");
+  }
+
+  return payload;
+}
