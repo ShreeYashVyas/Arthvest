@@ -250,7 +250,7 @@ def test_current_period_observation_is_not_rejected_as_future(
 
     assert result["observation_date"] == current_period_start
     assert result["observation_age_days"] == 0
-    assert result["freshness_status"] == "fresh"
+    assert result["freshness_status"] == "in-progress"
 
 
 def test_source_date_itself_in_the_future_is_rejected(
