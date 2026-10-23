@@ -32,5 +32,5 @@ jobs:
         working-directory: backend
 
       - name: Check configured live sources
-        run: python scripts/check_data_sources.py
+        run: python -m scripts.check_data_sources
         working-directory: backend
