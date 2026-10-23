@@ -229,3 +229,41 @@ def test_annual_inflation_observation_age_uses_year_end(
     assert result["observation_date"] == "2025-01-01"
     assert result["observation_age_days"] == expected_age
     assert result["freshness_status"] == "fresh"
+
+
+
+def test_current_period_observation_is_not_rejected_as_future(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    today = datetime.now(timezone.utc).date()
+    current_period_start = date(today.year, today.month, 1).isoformat()
+    monkeypatch.setattr(
+        macro_service,
+        "_fetch_fred_series",
+        lambda _series_id: (
+            [(current_period_start, 4.0)],
+            "2026-10-23T00:00:00+00:00",
+        ),
+    )
+
+    result = macro_service.fetch_macro_indicator("fed-funds")
+
+    assert result["observation_date"] == current_period_start
+    assert result["observation_age_days"] == 0
+    assert result["freshness_status"] == "fresh"
+
+
+def test_source_date_itself_in_the_future_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        macro_service,
+        "_fetch_fred_series",
+        lambda _series_id: (
+            [("2099-01-01", 4.0)],
+            "2026-10-23T00:00:00+00:00",
+        ),
+    )
+
+    with pytest.raises(MacroDataError, match="future observation date"):
+        macro_service.fetch_macro_indicator("fed-funds")
