@@ -20,6 +20,30 @@ SCORE_NAMES: dict[str, str] = {
     "us-unemployment": "U.S. Unemployment Rate",
 }
 
+SCORE_THRESHOLD_RULES: dict[str, list[str]] = {
+    "fed-funds": [
+        "value <= 2.00% -> score 85",
+        "2.00% < value <= 3.50% -> score 75",
+        "3.50% < value <= 4.50% -> score 60",
+        "4.50% < value <= 5.50% -> score 40",
+        "value > 5.50% -> score 20",
+    ],
+    "us-inflation": [
+        "value <= 2.00% -> score 90",
+        "2.00% < value <= 3.00% -> score 80",
+        "3.00% < value <= 4.00% -> score 65",
+        "4.00% < value <= 5.00% -> score 45",
+        "value > 5.00% -> score 25",
+    ],
+    "us-unemployment": [
+        "value <= 3.50% -> score 85",
+        "3.50% < value <= 4.50% -> score 75",
+        "4.50% < value <= 5.50% -> score 55",
+        "5.50% < value <= 6.50% -> score 35",
+        "value > 6.50% -> score 20",
+    ],
+}
+
 METHODOLOGY = (
     "Provisional heuristic: convert each input into a 0–100 component score "
     "using fixed threshold bands, then calculate a weighted average. Higher "
@@ -165,6 +189,7 @@ def calculate_us_conditions_score(
             "label": "insufficient-data",
             "provisional": True,
             "weights": SCORE_WEIGHTS,
+            "threshold_rules": SCORE_THRESHOLD_RULES,
             "components": components,
             "methodology": METHODOLOGY,
             "limitations": LIMITATIONS,
@@ -183,6 +208,7 @@ def calculate_us_conditions_score(
         "label": label,
         "provisional": True,
         "weights": SCORE_WEIGHTS,
+        "threshold_rules": SCORE_THRESHOLD_RULES,
         "components": components,
         "methodology": METHODOLOGY,
         "limitations": LIMITATIONS,
