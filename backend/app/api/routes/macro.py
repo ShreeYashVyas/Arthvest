@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
 
 from app.schemas.macro import (
+    MacroCatalogResponse,
+    MacroIndicatorMetadata,
     MacroIndicatorResponse,
     MacroOverviewItem,
     MacroOverviewResponse,
@@ -27,6 +29,35 @@ OVERVIEW_CATEGORIES = {
     "us-inflation": "Global economy",
     "us-unemployment": "Global economy",
 }
+
+
+@router.get(
+    "/catalog",
+    response_model=MacroCatalogResponse,
+    summary="List supported macro indicators and their source definitions",
+)
+def get_macro_catalog() -> MacroCatalogResponse:
+    """Return indicator definitions without making any upstream network calls."""
+    metadata = [
+        MacroIndicatorMetadata(
+            key=key,
+            indicator=config["indicator"],
+            description=config["description"],
+            series_id=config["series_id"],
+            frequency=config["frequency"],
+            unit=config["unit"],
+            source=config["source"],
+            source_url=f"https://fred.stlouisfed.org/series/{config['series_id']}",
+            calculation=config["calculation"],
+            freshness_threshold_days=int(config["max_age_days"]),
+        )
+        for key, config in INDICATORS.items()
+    ]
+    return MacroCatalogResponse(
+        generated_at=datetime.now(timezone.utc),
+        total_count=len(metadata),
+        indicators=metadata,
+    )
 
 
 @router.get(
