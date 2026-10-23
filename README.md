@@ -86,7 +86,7 @@ For a deliberate, networked check of the configured FRED feeds, run the diagnost
 
 ```powershell
 cd backend
-python scripts/check_data_sources.py
+python -m scripts.check_data_sources
 ```
 
 The diagnostic fetches the eight configured series, displays each latest validated observation and freshness state, and exits non-zero if a source cannot be fetched or validated. A `stale` or `in-progress` observation is reported separately from a connection failure. It needs internet access and is not part of normal CI.
