@@ -223,6 +223,7 @@ export type USMacroScore = {
   label: "supportive" | "mixed" | "pressured" | "insufficient-data";
   provisional: boolean;
   weights: Record<string, number>;
+  threshold_rules: Record<string, string[]>;
   components: USMacroScoreComponent[];
   methodology: string;
   limitations: string[];
@@ -243,6 +244,11 @@ function isUSMacroScore(value: unknown): value is USMacroScore {
     typeof data.provisional === "boolean" &&
     typeof data.weights === "object" &&
     data.weights !== null &&
+    typeof data.threshold_rules === "object" &&
+    data.threshold_rules !== null &&
+    Object.values(data.threshold_rules).every(
+      (rules) => Array.isArray(rules) && rules.every((rule) => typeof rule === "string"),
+    ) &&
     Array.isArray(data.components) &&
     typeof data.methodology === "string" &&
     Array.isArray(data.limitations) &&
