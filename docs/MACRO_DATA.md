@@ -36,9 +36,10 @@ Series metadata and links are returned dynamically by `/api/macro/catalog`.
 - India CPI inflation in this catalog is an annual World Bank series; it must not be mistaken for India's monthly CPI release.
 - Historical CPI inflation points are calculated for each month where a matching observation from 12 months earlier is available.
 - Missing, invalid and non-finite observations are not silently converted to zero.
-- Freshness is measured from the end of the represented observation period, not the retrieval time: month-end for monthly data, quarter-end for quarterly data, year-end for annual data, and the observation date for daily data. The original source observation date is preserved in the API. When a series publishes a timestamp for the current period before that period ends, its period-age is clamped to zero rather than incorrectly rejecting it as a future observation; source dates themselves must not be in the future.
+- Only `fresh` completed observations are eligible for the provisional U.S. score; `stale` and `in-progress` inputs cause the score to be withheld.
+- Freshness is measured from the end of the represented observation period, not the retrieval time: month-end for monthly data, quarter-end for quarterly data, year-end for annual data, and the observation date for daily data. The original source observation date is preserved in the API. When the source timestamp belongs to the current period, its period-age is clamped to zero and the observation is labelled `in-progress` until that period ends; source dates themselves must not be in the future.
 - The annual India CPI source uses a year-start timestamp for an annual observation; its freshness age is therefore computed from that year's end. The 550-day threshold allows for annual release timing, but remains a provisional operational check rather than a statement about economic significance.
-- Freshness thresholds are provisional operational checks, not statements about economic significance.
+- Freshness thresholds are provisional operational checks, not statements about economic significance. The data-quality endpoint reports `fresh`, `stale`, `in-progress` and unavailable inputs separately.
 - FRED observations may be revised. Arthvest caches each fetched series in-process for 15 minutes; this is not a persistent database.
 
 ## Provisional U.S. subscore
