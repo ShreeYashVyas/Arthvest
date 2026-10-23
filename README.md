@@ -1,39 +1,50 @@
 # Arthvest — Macro Intelligence
 
-Arthvest is a macroeconomic intelligence dashboard designed to present transparent, source-attributed indicators and explainable market-regime assessments.
+Arthvest is a research-first macroeconomic intelligence dashboard. It presents source-attributed observations, data-quality status, historical trends and a transparent **provisional U.S. macro conditions subscore**.
 
-## Phase 1 scope
+> The current score is experimental, not backtested, and is not the full global/India macro regime model or a market-return forecast.
 
-- Establish a clean frontend/backend foundation.
-- Provide a FastAPI health endpoint.
-- Build an institutional-style dashboard shell.
-- Add macroeconomic data sources and transparent scoring incrementally.
-- Clearly distinguish measured data from proposed, unvalidated scores.
+## Current Phase 1 capabilities
 
-## Architecture
+- Next.js dashboard with API connection state, indicator cards and historical sparklines.
+- FastAPI endpoints for health, a macro-indicator catalog, a best-effort overview, history, data quality, and a provisional U.S. score.
+- U.S. indicators: Federal Funds Effective Rate, CPI inflation (calculated year over year), and unemployment rate.
+- India-related indicators: Economic Policy Uncertainty Index, INR per USD exchange rate, and real effective exchange rate.
+- Source observation dates, retrieval timestamps, units and freshness classification.
+- In-process 15-minute source-series cache and parser/API/scoring tests.
+- GitHub Actions workflow for backend tests and frontend production build.
 
-- **Frontend:** Next.js, React, TypeScript, Tailwind CSS
-- **Backend:** Python, FastAPI
-- **Data layer (later phase):** source adapters, validation, timestamps, and caching
-- **Database (later phase):** PostgreSQL
+## Technology
+
+- **Frontend:** Next.js, React, TypeScript, Tailwind CSS, Lucide
+- **Backend:** Python, FastAPI, Pydantic
+- **Source data:** published FRED series with source-attribution links
+- **Persistence:** not yet implemented; cache is in-process only
+- **Database:** PostgreSQL remains a future phase
 
 ## Project structure
 
 ```text
 Arthvest/
-├── frontend/             # Next.js dashboard
-├── backend/              # FastAPI service
+├── .github/workflows/ci.yml
+├── backend/
 │   ├── app/
-│   │   ├── main.py
-│   │   └── api/routes/
+│   │   ├── api/routes/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   └── main.py
+│   ├── tests/
 │   └── requirements.txt
-├── .gitignore
-└── README.md
+├── docs/MACRO_DATA.md
+└── frontend/
+    └── src/app/
 ```
 
-## Run locally
+## Run locally (Windows PowerShell)
 
-### Backend
+Use two VS Code terminals.
+
+### 1. Backend
 
 Requires Python 3.11 or newer.
 
@@ -45,31 +56,53 @@ python -m pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Health check: http://127.0.0.1:8000/health  
-API docs: http://127.0.0.1:8000/docs
+- Health: http://127.0.0.1:8000/health
+- API docs: http://127.0.0.1:8000/docs
 
-### Frontend
+### 2. Frontend
 
 Requires a current Node.js LTS release.
 
 ```powershell
 cd frontend
 npm install
+Copy-Item .env.example .env.local
 npm run dev
 ```
 
-Frontend: http://localhost:3000
+Open http://localhost:3000. The frontend expects the API at `http://127.0.0.1:8000` by default.
 
-Set `NEXT_PUBLIC_API_BASE_URL` if the backend is not running at `http://127.0.0.1:8000`.
+### 3. Backend tests
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+python -m pytest -q
+```
+
+## API endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Backend health |
+| `GET /api/macro/catalog` | Indicator definitions and metadata |
+| `GET /api/macro/overview` | Latest available snapshot for configured indicators |
+| `GET /api/macro/quality` | Coverage, staleness and availability summary |
+| `GET /api/macro/history/{indicator_key}?limit=12` | Historical observations; limit from 1 to 60 |
+| `GET /api/macro/fed-funds` | Federal Funds Rate endpoint |
+| `GET /api/macro/score/us-conditions` | Provisional U.S.-only macro conditions subscore |
+
+Indicator keys, formulas, sources and freshness thresholds are documented in [docs/MACRO_DATA.md](docs/MACRO_DATA.md).
 
 ## Data integrity principles
 
-- Do not fabricate current readings.
-- Include source and observation dates for data-backed indicators.
-- Show unavailable data as unavailable, not as zero.
-- Keep score weights and thresholds explicit; treat initial scoring rules as provisional until validated.
-- Do not present the dashboard as personalized financial advice.
+- Never fabricate current readings or replace missing data with zero.
+- Distinguish source observation date from retrieval timestamp.
+- Show stale data explicitly; freshness thresholds are provisional operational checks.
+- Treat initial scoring weights and thresholds as illustrative until empirically reviewed and backtested.
+- FRED data may be revised; consult the original source links for details.
+- Arthvest is research and decision support, not personalized financial advice.
 
-## Status
+## Current limitations
 
-Initial foundation. Live indicators, persistence, and scoring logic have not yet been implemented.
+No persistent database, scheduled ingestion, historical database, Indian inflation series with verified current observations, market-price feeds, geopolitical event model, or calibrated full composite score has been implemented yet. Current historical trends are fetched from upstream series and cached in memory.
