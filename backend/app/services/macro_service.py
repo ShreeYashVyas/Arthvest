@@ -20,6 +20,8 @@ CACHE_TTL_SECONDS = 15 * 60
 INDICATORS: dict[str, dict[str, str]] = {
     "fed-funds": {
         "indicator": "Federal Funds Effective Rate",
+        "description": "Effective interest rate at which depository institutions lend reserve balances overnight.",
+        "frequency": "Daily, with source-published observations",
         "series_id": "FEDFUNDS",
         "unit": "percent",
         "source": "Board of Governors of the Federal Reserve System via FRED",
@@ -28,6 +30,8 @@ INDICATORS: dict[str, dict[str, str]] = {
     },
     "us-inflation": {
         "indicator": "U.S. CPI Inflation (year over year)",
+        "description": "Twelve-month percentage change in the Consumer Price Index for All Urban Consumers.",
+        "frequency": "Monthly",
         "series_id": "CPIAUCSL",
         "unit": "percent year over year",
         "source": "U.S. Bureau of Labor Statistics via FRED",
@@ -36,6 +40,8 @@ INDICATORS: dict[str, dict[str, str]] = {
     },
     "us-unemployment": {
         "indicator": "U.S. Unemployment Rate",
+        "description": "Civilian unemployment rate, seasonally adjusted.",
+        "frequency": "Monthly",
         "series_id": "UNRATE",
         "unit": "percent, seasonally adjusted",
         "source": "U.S. Bureau of Labor Statistics via FRED",
