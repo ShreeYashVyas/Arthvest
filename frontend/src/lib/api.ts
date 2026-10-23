@@ -3,6 +3,7 @@ export type MacroIndicator = {
   series_id: string;
   value: number;
   observation_date: string;
+  frequency: string;
   observation_age_days: number;
   freshness_status: "fresh" | "stale";
   unit: string;
@@ -40,6 +41,7 @@ function isMacroIndicator(value: unknown): value is MacroIndicator {
     typeof data.value === "number" &&
     Number.isFinite(data.value) &&
     typeof data.observation_date === "string" &&
+    typeof data.frequency === "string" &&
     typeof data.observation_age_days === "number" &&
     Number.isInteger(data.observation_age_days) &&
     (data.freshness_status === "fresh" || data.freshness_status === "stale") &&
@@ -139,6 +141,7 @@ export type MacroHistory = {
   indicator: string;
   series_id: string;
   unit: string;
+  frequency: string;
   source: string;
   source_url: string;
   calculation: string;
@@ -157,6 +160,7 @@ function isMacroHistory(value: unknown): value is MacroHistory {
     typeof data.indicator === "string" &&
     typeof data.series_id === "string" &&
     typeof data.unit === "string" &&
+    typeof data.frequency === "string" &&
     typeof data.source === "string" &&
     typeof data.source_url === "string" &&
     typeof data.calculation === "string" &&
