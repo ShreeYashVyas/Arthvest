@@ -151,6 +151,11 @@ def get_macro_quality() -> MacroQualityResponse:
         for item in available
         if item.data is not None and item.data.freshness_status == "stale"
     ]
+    in_progress = [
+        item
+        for item in available
+        if item.data is not None and item.data.freshness_status == "in-progress"
+    ]
     unavailable = [item for item in overview.indicators if item.data is None]
 
     if not available:
@@ -158,10 +163,10 @@ def get_macro_quality() -> MacroQualityResponse:
         note = "No indicator currently has a validated observation."
     elif len(fresh) == len(overview.indicators):
         quality_status = "good"
-        note = "All configured indicators are available and within their provisional freshness thresholds."
+        note = "All configured indicators have completed observations within their provisional freshness thresholds."
     else:
         quality_status = "partial"
-        note = "At least one indicator is unavailable or stale; downstream scoring should remain disabled."
+        note = "At least one indicator is unavailable, stale, or still within an unfinished observation period; dependent scoring may be withheld."
 
     quality_items = []
     for item in overview.indicators:
@@ -183,7 +188,11 @@ def get_macro_quality() -> MacroQualityResponse:
                     issue=(
                         "Observation is older than the configured threshold."
                         if item.data.freshness_status == "stale"
-                        else None
+                        else (
+                            "Observation belongs to a period that has not ended yet."
+                            if item.data.freshness_status == "in-progress"
+                            else None
+                        )
                     ),
                 )
             )
@@ -197,6 +206,7 @@ def get_macro_quality() -> MacroQualityResponse:
         unavailable_count=len(unavailable),
         fresh_count=len(fresh),
         stale_count=len(stale),
+        in_progress_count=len(in_progress),
         coverage_percent=coverage,
         quality_status=quality_status,
         note=note,
