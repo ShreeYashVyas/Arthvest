@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchMacroHistory, fetchMacroOverview, type MacroHistory, type MacroHistoryPoint, type MacroOverview } from "@/lib/api";
+import { fetchMacroHistory, fetchMacroOverview, fetchUSMacroScore, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type USMacroScore } from "@/lib/api";
 import {
   Activity,
   ArrowDownRight,
@@ -124,6 +124,9 @@ export default function Home() {
   const [historyByKey, setHistoryByKey] = useState<Record<string, MacroHistory | null>>({});
   const [macroLoading, setMacroLoading] = useState(true);
   const [macroError, setMacroError] = useState<string | null>(null);
+  const [usScore, setUsScore] = useState<USMacroScore | null>(null);
+  const [scoreLoading, setScoreLoading] = useState(true);
+  const [scoreError, setScoreError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -162,6 +165,23 @@ export default function Home() {
       })
       .finally(() => {
         if (active) setMacroLoading(false);
+      });
+
+    setScoreLoading(true);
+    setScoreError(null);
+    fetchUSMacroScore(controller.signal)
+      .then((data) => {
+        if (!active) return;
+        setUsScore(data);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setScoreError(
+          error instanceof Error ? error.message : "Unable to load the U.S. macro score.",
+        );
+      })
+      .finally(() => {
+        if (active) setScoreLoading(false);
       });
 
     fetch(`${baseUrl}/health`, { cache: "no-store" })
@@ -268,7 +288,7 @@ export default function Home() {
             <div>
               <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Macro regime monitor</div>
               <h2 id="regime-title" className="mt-2 text-xl font-medium text-white sm:text-2xl">Investment readiness</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">The scoring model is not active yet. Readings will appear after source adapters, validation rules and scoring methodology are implemented.</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">The full global and India composite remains inactive. A separate provisional U.S. conditions subscore is shown below and must not be interpreted as the full Arthvest regime.</p>
             </div>
             <span className="rounded-full border border-amber-300/25 bg-amber-300/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.13em] text-amber-200">Model not calibrated</span>
           </div>
@@ -319,6 +339,121 @@ export default function Home() {
                 })}
               </div>
             </div>
+          </div>
+        </section>
+
+        <section
+          aria-labelledby="us-score-title"
+          className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/70"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">Experimental model / U.S. only</div>
+              <h2 id="us-score-title" className="mt-2 text-xl font-medium text-white">
+                U.S. macro conditions subscore
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                A transparent rules-based prototype using policy rates, CPI inflation and unemployment. It is not a market forecast or the complete Arthvest global/India score.
+              </p>
+            </div>
+            <span className="rounded-full border border-amber-300/25 bg-amber-300/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-amber-200">
+              Provisional · not calibrated
+            </span>
+          </div>
+
+          <div className="p-5 sm:p-7">
+            {scoreLoading ? (
+              <div role="status" className="flex items-center gap-3 py-5 text-sm text-muted">
+                <RefreshCw size={16} className="animate-spin" /> Calculating from validated observations…
+              </div>
+            ) : scoreError ? (
+              <div role="status" className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm leading-6 text-amber-200">{scoreError}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScoreLoading(true);
+                    setRetry((value) => value + 1);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-slate-200 transition hover:border-accent/50 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
+                >
+                  <RefreshCw size={13} /> Retry score
+                </button>
+              </div>
+            ) : usScore?.available && usScore.score !== null ? (
+              <>
+                <div className="grid gap-5 md:grid-cols-[0.65fr_1.35fr]">
+                  <div className="rounded-xl border border-line bg-[#0B1017] p-5">
+                    <div className="text-xs text-muted">U.S. conditions score</div>
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="text-6xl font-light tracking-tight text-white">{usScore.score.toFixed(1)}</span>
+                      <span className="text-sm text-muted">/ 100</span>
+                    </div>
+                    <div className="mt-3 inline-flex rounded-md border border-line px-2.5 py-1.5 text-xs uppercase tracking-[0.12em] text-slate-200">
+                      {usScore.label}
+                    </div>
+                    <p className="mt-4 text-xs leading-5 text-muted">
+                      Calculated {new Date(usScore.generated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    {usScore.components.map((component) => (
+                      <div key={component.key} className="rounded-xl border border-line bg-[#0B1017] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium text-white">{component.indicator}</div>
+                            <div className="mt-1 text-[10px] text-muted">
+                              {component.observation_date ? `Observation ${component.observation_date}` : "Observation unavailable"}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-medium text-slate-100">
+                              {component.value_percent === null ? "—" : `${component.value_percent.toFixed(2)}%`}
+                            </div>
+                            <div className="mt-1 text-[10px] text-muted">
+                              Weight {(component.weight * 100).toFixed(0)}%
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-line">
+                          <div
+                            className="h-full rounded-full bg-accent"
+                            style={{ width: `${component.component_score ?? 0}%` }}
+                          />
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted">
+                          <span>Component score: {component.component_score === null ? "not scored" : component.component_score.toFixed(0) + " / 100"}</span>
+                          <span>Contribution: {component.weighted_points === null ? "—" : component.weighted_points.toFixed(1) + " points"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <details className="mt-5 rounded-xl border border-line px-4 py-3">
+                  <summary className="cursor-pointer text-xs font-medium text-slate-200">Scoring methodology & limitations</summary>
+                  <p className="mt-3 text-xs leading-6 text-muted">{usScore.methodology}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-muted">
+                    {usScore.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
+                  </ul>
+                </details>
+              </>
+            ) : (
+              <div role="status" className="rounded-xl border border-amber-300/20 bg-amber-300/[0.03] p-5">
+                <div className="text-base font-medium text-amber-100">Score withheld — insufficient fresh data</div>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  Arthvest will not fill gaps with made-up values or calculate a partial score when required inputs are missing or stale.
+                </p>
+                {usScore?.blockers?.length ? (
+                  <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-5 text-muted">
+                    {usScore.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+                  </ul>
+                ) : null}
+                {usScore?.methodology ? (
+                  <p className="mt-3 text-xs leading-5 text-muted">{usScore.methodology}</p>
+                ) : null}
+              </div>
+            )}
           </div>
         </section>
 
