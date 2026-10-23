@@ -267,3 +267,48 @@ def test_source_date_itself_in_the_future_is_rejected(
 
     with pytest.raises(MacroDataError, match="future observation date"):
         macro_service.fetch_macro_indicator("fed-funds")
+
+
+
+def test_concurrent_fetches_share_one_upstream_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Lock
+    from time import sleep
+
+    series_id = "SINGLEFLIGHTTEST"
+    calls = 0
+    calls_lock = Lock()
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self) -> bytes:
+            return b"observation_date,SINGLEFLIGHTTEST\n2026-10-01,1.25\n"
+
+    def fake_urlopen(_request, timeout: int):
+        nonlocal calls
+        assert timeout == macro_service.REQUEST_TIMEOUT_SECONDS
+        with calls_lock:
+            calls += 1
+        sleep(0.05)
+        return FakeResponse()
+
+    monkeypatch.setattr(macro_service, "urlopen", fake_urlopen)
+
+    with macro_service._cache_lock:
+        macro_service._series_cache.pop(series_id, None)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(executor.map(lambda _index: macro_service._fetch_fred_series(series_id), range(8)))
+
+    assert calls == 1
+    assert all(result[0] == [("2026-10-01", 1.25)] for result in results)
+    assert len({result[1] for result in results}) == 1
