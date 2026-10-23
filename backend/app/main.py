@@ -1,10 +1,23 @@
 """Arthvest FastAPI application entrypoint."""
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.health import router as health_router
 from app.api.routes.macro import router as macro_router
+
+def configured_cors_origins() -> list[str]:
+    """Read comma-separated frontend origins from the environment."""
+    default = "http://localhost:3000,http://127.0.0.1:3000"
+    configured = os.getenv("CORS_ORIGINS", default)
+    return [
+        origin.strip().rstrip("/")
+        for origin in configured.split(",")
+        if origin.strip()
+    ]
+
 
 app = FastAPI(
     title="Arthvest API",
@@ -14,7 +27,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=configured_cors_origins(),
     allow_credentials=False,
     allow_methods=["GET"],
     allow_headers=["*"],
