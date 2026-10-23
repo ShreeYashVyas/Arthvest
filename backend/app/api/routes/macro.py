@@ -13,6 +13,8 @@ from app.schemas.macro import (
     MacroIndicatorResponse,
     MacroOverviewItem,
     MacroOverviewResponse,
+    MacroQualityItem,
+    MacroQualityResponse,
 )
 from app.services.macro_service import (
     INDICATORS,
@@ -118,4 +120,76 @@ def get_macro_overview() -> MacroOverviewResponse:
         available_count=available_count,
         total_count=len(INDICATORS),
         indicators=indicators,
+    )
+
+
+@router.get(
+    "/quality",
+    response_model=MacroQualityResponse,
+    summary="Summarize availability and freshness of macro data",
+)
+def get_macro_quality() -> MacroQualityResponse:
+    """Report data coverage and staleness; do not treat retrieval time as freshness."""
+    overview = get_macro_overview()
+    available = [item for item in overview.indicators if item.data is not None]
+    fresh = [
+        item
+        for item in available
+        if item.data is not None and item.data.freshness_status == "fresh"
+    ]
+    stale = [
+        item
+        for item in available
+        if item.data is not None and item.data.freshness_status == "stale"
+    ]
+    unavailable = [item for item in overview.indicators if item.data is None]
+
+    if not available:
+        quality_status = "unavailable"
+        note = "No indicator currently has a validated observation."
+    elif len(fresh) == len(overview.indicators):
+        quality_status = "good"
+        note = "All configured indicators are available and within their provisional freshness thresholds."
+    else:
+        quality_status = "partial"
+        note = "At least one indicator is unavailable or stale; downstream scoring should remain disabled."
+
+    quality_items = []
+    for item in overview.indicators:
+        if item.data is None:
+            quality_items.append(
+                MacroQualityItem(
+                    key=item.key,
+                    status="unavailable",
+                    issue=item.error or "Source data unavailable.",
+                )
+            )
+        else:
+            quality_items.append(
+                MacroQualityItem(
+                    key=item.key,
+                    status="available",
+                    freshness_status=item.data.freshness_status,
+                    observation_age_days=item.data.observation_age_days,
+                    issue=(
+                        "Observation is older than the configured threshold."
+                        if item.data.freshness_status == "stale"
+                        else None
+                    ),
+                )
+            )
+
+    total = overview.total_count
+    coverage = round((len(available) / total) * 100, 2) if total else 0.0
+    return MacroQualityResponse(
+        generated_at=datetime.now(timezone.utc),
+        total_count=total,
+        available_count=len(available),
+        unavailable_count=len(unavailable),
+        fresh_count=len(fresh),
+        stale_count=len(stale),
+        coverage_percent=coverage,
+        quality_status=quality_status,
+        note=note,
+        indicators=quality_items,
     )
