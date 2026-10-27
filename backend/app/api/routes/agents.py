@@ -3,7 +3,7 @@
 import logging
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.services import research_agents
 
@@ -15,6 +15,11 @@ class ResearchRequest(BaseModel):
     """Bounded user request for a research brief."""
 
     question: str = Field(min_length=4, max_length=600)
+
+    @field_validator("question", mode="before")
+    @classmethod
+    def trim_question(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
 
 @router.get("/status", summary="Check AI research-agent configuration")
