@@ -14,9 +14,19 @@ This document describes the current Phase 1 data inputs. Source readings are obs
 | GET | `/api/macro/fed-funds` | Federal Funds Rate compatibility endpoint |
 | GET | `/api/macro/score/us-conditions` | Provisional U.S.-only macro conditions subscore |
 | GET | `/api/macro/storage` | Optional database readiness and archive counts |
+| GET | `/api/agents/status` | AI research-agent readiness without returning secrets |
+| POST | `/api/agents/research` | Evidence-grounded macro and India-market research brief; requires `OPENAI_API_KEY` |
 | GET | `/api/macro/archive/{indicator_key}` | Archived source-native values (requires `DATABASE_URL`) |
 | GET | `/api/macro/revisions/{indicator_key}` | Detected upstream value revisions (requires `DATABASE_URL`) |
 | GET | `/api/macro/source-checks` | Recent upstream fetch outcomes (requires `DATABASE_URL`)
+
+## AI research council
+
+The optional AI Research Council is implemented with the OpenAI Agents SDK. It runs two typed specialist reports—the Macro Analyst and the India Market Analyst—in parallel, then passes the source context and both reports to a Lead Research Analyst. The API returns the lead brief, the two specialist reports, and the source evidence used for that run so users can distinguish observations from interpretation.
+
+The server gathers the eight indicators listed below through the existing macro service, preserving observation date, retrieval time, freshness, units, source labels, and source URLs. It also asks the existing Upstox service for its read-only index snapshot. If Upstox is missing or unavailable, the market specialist is instructed to report the gap, not to invent quote values. If an indicator cannot be validated, it remains unavailable in the evidence payload. The user question is length-bounded and the model has no tools that can submit trades or alter data.
+
+Configuration lives only in the backend environment: `OPENAI_API_KEY` and optional `ARTHVEST_AGENT_MODEL`. The readiness endpoint returns whether a key is configured and the model name but never returns the key itself. A research request calls the two specialists concurrently and then invokes the lead analyst, so it makes three model runs and may incur API usage charges. Outputs are research/decision support, not personalized financial advice, a calibrated regime forecast, or a trading signal.
 
 ## Configured indicators
 

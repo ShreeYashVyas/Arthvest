@@ -5,6 +5,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.agents import router as agents_router
 from app.api.routes.health import router as health_router
 from app.api.routes.macro import router as macro_router
 from app.api.routes.market import router as market_router
@@ -30,11 +31,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=configured_cors_origins(),
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
 app.include_router(health_router)
+app.include_router(agents_router)
 app.include_router(macro_router)
 app.include_router(market_router)
 
