@@ -11,7 +11,7 @@ from typing import Literal
 from agents import Agent, Runner
 from pydantic import BaseModel, Field
 
-from app.services import upstox_service
+from app.services import geopolitical_news, upstox_service
 from app.services.macro_service import INDICATORS, MacroDataError, fetch_macro_indicator
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ def get_agent_status() -> dict[str, object]:
     return {
         "provider": "OpenAI Agents SDK",
         "configured": configured,
-        "model": os.getenv("ARTHVEST_AGENT_MODEL", "gpt-4.1-mini"),
+        "model": os.getenv("ARTHVEST_AGENT_MODEL", "gpt-6-luna"),
         "agents": AGENT_NAMES,
         "workflow": "six-role council",
         "note": (
@@ -138,10 +138,13 @@ def _load_evidence_context() -> dict[str, object]:
             "quotes": [],
         }
 
+    news = geopolitical_news.fetch_geopolitical_news()
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "macro_observations": macro_items,
         "market_snapshot": market,
+        "news_snapshot": news,
         "data_quality_notes": [
             "Observation dates describe the source period; retrieval time does not make an old observation fresh.",
             "Unavailable or stale values must remain explicit and must not be imputed.",
@@ -271,6 +274,7 @@ async def run_research(question: str) -> dict[str, object]:
         brief = ResearchBrief.model_validate(brief)
 
     market_available = context["market_snapshot"]["status"] == "available"
+    news_status = context.get("news_snapshot", {}).get("status", "unavailable")
     return {
         "status": "ready",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -279,7 +283,7 @@ async def run_research(question: str) -> dict[str, object]:
         "agents": [
             {"name": "Macro Analyst", "status": "completed"},
             {"name": "India Market Analyst", "status": "completed" if market_available else "partial"},
-            {"name": "Geopolitical Risk Analyst", "status": "completed_with_source_limitations"},
+            {"name": "Geopolitical Risk Analyst", "status": "completed" if news_status == "available" else "partial"},
             {"name": "Cross-Asset Analyst", "status": "completed_with_data_limitations"},
             {"name": "Risk & Evidence Auditor", "status": "completed"},
             {"name": "Lead Research Analyst", "status": "completed"},
