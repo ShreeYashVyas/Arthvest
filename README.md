@@ -108,7 +108,7 @@ Generate an Analytics Token in the [Upstox Developer Apps portal](https://accoun
 
 ## Optional AI research agents
 
-The AI Research Council is an optional, read-only research workflow powered by the OpenAI Agents SDK. It runs a Macro Analyst and an India Market Analyst in parallel, then asks a Lead Research Analyst to synthesize their structured reports. The context is collected server-side from the configured FRED-backed indicators and, when available, the existing read-only Upstox quote endpoint. The page shows the source observations separately from AI interpretation.
+The AI Research Council is an optional, read-only research workflow powered by the OpenAI Agents SDK. It runs four specialists in parallel (Macro, India Market, Geopolitical Risk and Cross-Asset), asks a Risk & Evidence Auditor to critique their reports, then asks a Lead Research Analyst to synthesize the final brief. The context is collected server-side from the configured FRED-backed indicators and, when available, the existing read-only Upstox quote endpoint. The page shows the source observations separately from AI interpretation.
 
 Configure these values in the untracked `backend/.env` file, then restart FastAPI:
 
@@ -122,7 +122,7 @@ The OpenAI key is different from the Upstox API key/Analytics Token. It is only 
 - Agent status: `GET /api/agents/status`
 - Generate a research brief: `POST /api/agents/research` with JSON body `{"question":"Summarize current macro risks for India" }`
 
-This is descriptive decision support, not a calibrated forecast or personalized financial advice. Agents must not invent unavailable readings, stale observations remain marked, market quote gaps are disclosed, and no agent can place or modify trades. Each research run makes three model runs (two specialists in parallel plus the lead synthesis).
+This is descriptive decision support, not a calibrated forecast or personalized financial advice. Agents must not invent unavailable readings, stale observations remain marked, market quote gaps are disclosed, and no agent can place or modify trades. Each research run makes six model runs (four specialists in parallel, one evidence audit, and one lead synthesis).
 
 ## Archived historical analytics
 
@@ -163,7 +163,7 @@ Indicator keys, formulas, sources and freshness thresholds are documented in [do
 
 ## Current limitations
 
-Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. The Upstox Market Pulse is optional and requires `UPSTOX_ANALYTICS_TOKEN`; it currently provides quote snapshots, not continuous WebSocket streaming or archived market candles. The AI Research Council is optional and requires `OPENAI_API_KEY`; each brief uses three model runs and may incur OpenAI API charges. A geopolitical event model and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
+Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. The Upstox Market Pulse is optional and requires `UPSTOX_ANALYTICS_TOKEN`; it currently provides quote snapshots, not continuous WebSocket streaming or archived market candles. The AI Research Council is optional and requires `OPENAI_API_KEY`; each brief uses six model runs and may incur OpenAI API charges. A geopolitical event model and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
 
 
 ## Cross-indicator historical comparison

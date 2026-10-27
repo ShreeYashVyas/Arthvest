@@ -46,7 +46,7 @@ type ResearchResponse = {
   status: string; generated_at: string; question: string; model: string;
   agents: { name: string; status: string }[];
   brief: Brief;
-  specialist_reports: { macro: SpecialistReport; market: SpecialistReport };
+  specialist_reports: { macro: SpecialistReport; market: SpecialistReport; geopolitical_risk: SpecialistReport; cross_asset: SpecialistReport; risk_evidence_audit: SpecialistReport; };
   evidence: {
     generated_at: string;
     macro_observations: MacroEvidence[];
@@ -264,6 +264,9 @@ export default function AgentsPage() {
               {[
                 { title: "Macro Analyst", report: research.specialist_reports.macro, icon: Activity },
                 { title: "India Market Analyst", report: research.specialist_reports.market, icon: TrendingUp },
+                { title: "Geopolitical Risk Analyst", report: research.specialist_reports.geopolitical_risk, icon: ShieldCheck },
+                { title: "Cross-Asset Analyst", report: research.specialist_reports.cross_asset, icon: Activity },
+                { title: "Risk & Evidence Auditor", report: research.specialist_reports.risk_evidence_audit, icon: ShieldCheck },
               ].map(({ title, report, icon: Icon }) => <article key={title} className="rounded-2xl border border-line bg-panel p-5">
                 <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted"><Icon size={15} className="text-accent" /> {title}</div>
                 <p className="text-sm leading-6 text-white/85">{report.summary}</p>
