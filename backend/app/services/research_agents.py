@@ -217,11 +217,10 @@ def _build_agents() -> tuple[Agent, Agent, Agent, Agent, Agent, Agent]:
     cross_asset_agent = Agent(
         name="Cross-Asset Analyst", model=model, output_type=SpecialistReport,
         instructions=(
-            "Explore descriptive relationships only among the supplied macro observations and available index "
-            "quotes. The context may contain only latest values, not aligned time series, so do not calculate "
-            "correlations, returns, beta or lead-lag effects unless the required historical observations exist. "
-            "Do not imply causation or invent asset classes or values. Explicitly state data gaps and use only "
-            "provided evidence keys."
+            "Explore descriptive patterns using supplied macro observations/history and the current index snapshot. "
+        "No historical index prices or aligned market series are supplied: do not calculate market/macro "
+        "correlations, beta, returns or lead-lag effects. Do not claim causation or invent values. State data gaps "
+        "and use only supplied evidence keys."
         ),
     )
     auditor_agent = Agent(
