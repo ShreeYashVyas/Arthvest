@@ -17,7 +17,10 @@ def test_agent_status_never_exposes_api_key(monkeypatch) -> None:
     payload = response.json()
     assert payload["provider"] == "OpenAI Agents SDK"
     assert payload["configured"] is True
-    assert len(payload["agents"]) == 3
+    assert len(payload["agents"]) == 6
+    assert {agent["name"] for agent in payload["agents"]} >= {
+        "Geopolitical Risk Analyst", "Cross-Asset Analyst", "Risk & Evidence Auditor"
+    }
     assert key not in response.text
 
 
