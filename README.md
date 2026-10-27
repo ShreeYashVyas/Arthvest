@@ -13,12 +13,13 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 - Source observation dates, retrieval timestamps, native units, frequency-aware freshness and period-labelled historical trends.
 - In-process 15-minute source-series cache; optional SQLAlchemy persistence for source observations, upstream revisions, and fetch successes/failures; descriptive analytics, relative comparison and scheduled archive ingestion.
 - GitHub Actions workflow for backend tests and frontend production build.
+- Optional Upstox-powered India Market Pulse page for read-only NIFTY 50, NIFTY BANK and India VIX quote snapshots; the token stays in the backend environment.
 
 ## Technology
 
 - **Frontend:** Next.js, React, TypeScript, Tailwind CSS, Lucide
 - **Backend:** Python, FastAPI, Pydantic
-- **Source data:** published FRED series with source-attribution links
+- **Source data:** published FRED series with source-attribution links; optional Upstox Market Quote API for Indian indices
 - **Persistence:** optional SQLAlchemy archive for observations, revisions, and source checks
 - **Database:** PostgreSQL through `DATABASE_URL` when configured; live source feeds still run without persistence
 
@@ -29,9 +30,9 @@ Arthvest/
 ├── .github/workflows/ci.yml
 ├── backend/
 │   ├── app/
-│   │   ├── api/routes/
+│   │   ├── api/routes/  # macro.py, market.py, health.py
 │   │   ├── schemas/
-│   │   ├── services/
+│   │   ├── services/    # macro, archive, analytics, Upstox
 │   │   └── main.py
 │   ├── tests/
 │   └── requirements.txt
@@ -53,7 +54,9 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-uvicorn app.main:app --reload
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+# Edit .env privately if enabling PostgreSQL or Upstox; never commit it.
+uvicorn app.main:app --reload --env-file .env
 ```
 
 - Health: http://127.0.0.1:8000/health
@@ -97,6 +100,10 @@ You can also trigger **Live Macro Source Check** from the repository's **Actions
 
 Live fetching works without a database. To retain source observations, detect upstream revisions, and record fetch failures across restarts, configure `DATABASE_URL` for PostgreSQL using a URL such as `postgresql+psycopg://USER:PASSWORD@HOST:5432/arthvest`. Provider URLs using `postgres://` or `postgresql://` are normalized automatically. Keep credentials in deployment secrets or an untracked `.env`; never commit real credentials. On the first storage operation, Arthvest creates its initial SQLAlchemy tables. Without `DATABASE_URL`, the `/api/macro/storage` endpoint reports persistence as disabled and archive endpoints return HTTP 503 while live macro endpoints continue.
 
+## Optional Upstox market data
+
+Generate an Analytics Token in the [Upstox Developer Apps portal](https://account.upstox.com/developer/apps) and place it in `backend/.env` as `UPSTOX_ANALYTICS_TOKEN`. This is a read-only integration for market-data GET APIs; the token is never returned by Arthvest endpoints or shipped to the browser. The `/markets` page shows NIFTY 50, NIFTY BANK, and India VIX quotes from Upstox. An absent token is reported explicitly, and absent quotes are never replaced with sample values. See [Upstox Analytics Token documentation](https://upstox.com/developer/api-documentation/analytics-token/) and the [Full Market Quotes API](https://upstox.com/developer/api-documentation/get-full-market-quote/).
+
 ## Archived historical analytics
 
 The optional archive can power a descriptive analytics endpoint such as `/api/macro/analytics/fed-funds?limit=12`. It reports the oldest/latest values in the returned window, absolute and relative change, direction, mean, min/max, and population standard deviation. The endpoint requires a reachable configured database and at least two archived display observations. For U.S. CPI inflation it derives year-over-year inflation from archived CPI index levels, matching the dashboard's units. These are descriptive statistics only—not a calibrated regime score or forecast. `limit` is between 2 and 60.
@@ -113,6 +120,8 @@ The optional archive can power a descriptive analytics endpoint such as `/api/ma
 | `GET /api/macro/fed-funds` | Federal Funds Rate endpoint |
 | `GET /api/macro/score/us-conditions` | Provisional U.S.-only macro conditions subscore |
 | `GET /api/macro/storage` | Database readiness and archive counts |
+| `GET /api/market/upstox/status` | Upstox token readiness without exposing credentials |
+| `GET /api/market/upstox/quotes` | Read-only NIFTY 50, NIFTY BANK and India VIX snapshot (requires `UPSTOX_ANALYTICS_TOKEN`) |
 | `GET /api/macro/archive/{indicator_key}?limit=12` | Stored source-native observations (requires `DATABASE_URL`) |
 | `GET /api/macro/revisions/{indicator_key}?limit=20` | Detected upstream value revisions (requires `DATABASE_URL`) |
 | `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)
@@ -132,7 +141,7 @@ Indicator keys, formulas, sources and freshness thresholds are documented in [do
 
 ## Current limitations
 
-Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. Scheduled ingestion, market-price feeds, a geopolitical event model, and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
+Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. The Upstox Market Pulse is optional and requires `UPSTOX_ANALYTICS_TOKEN`; it currently provides quote snapshots, not continuous WebSocket streaming or archived market candles. A geopolitical event model and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
 
 
 ## Cross-indicator historical comparison
