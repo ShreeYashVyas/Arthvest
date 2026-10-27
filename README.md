@@ -108,13 +108,14 @@ Generate an Analytics Token in the [Upstox Developer Apps portal](https://accoun
 
 ## Optional AI research agents
 
-The AI Research Council is an optional, read-only research workflow powered by the OpenAI Agents SDK. It runs four specialists in parallel (Macro, India Market, Geopolitical Risk and Cross-Asset), asks a Risk & Evidence Auditor to critique their reports, then asks a Lead Research Analyst to synthesize the final brief. The context is collected server-side from the configured FRED-backed indicators and, when available, the existing read-only Upstox quote endpoint. The page shows the source observations separately from AI interpretation.
+The AI Research Council is an optional, read-only research workflow powered by the OpenAI Agents SDK. It runs four specialists in parallel (Macro, India Market, Geopolitical Risk and Cross-Asset), asks a Risk & Evidence Auditor to critique their reports, then asks a Lead Research Analyst to synthesize the final brief. The context is collected server-side from FRED-backed macro observations and short histories, the optional read-only Upstox quote endpoint, and recent GDELT DOC 2.0 headline metadata when available. GDELT headlines are unverified signals, not proof of events, and full article bodies are not fetched. The page shows source observations separately from AI interpretation.
 
 Configure these values in the untracked `backend/.env` file, then restart FastAPI:
 
 ```dotenv
 OPENAI_API_KEY=your_openai_api_key
-ARTHVEST_AGENT_MODEL=gpt-4.1-mini
+ARTHVEST_AGENT_MODEL=gpt-6-luna
+ARTHVEST_AGENT_MAX_REQUESTS_PER_HOUR=5
 ```
 
 The OpenAI key is different from the Upstox API key/Analytics Token. It is only read by the backend; do not add it to `frontend/.env.local`, source control, or client-side code. AI runs require an OpenAI API account with API access and may incur usage charges. The default model can be changed through `ARTHVEST_AGENT_MODEL`.
@@ -143,7 +144,7 @@ The optional archive can power a descriptive analytics endpoint such as `/api/ma
 | `GET /api/market/upstox/status` | Upstox token readiness without exposing credentials |
 | `GET /api/market/upstox/quotes` | Read-only NIFTY 50, NIFTY BANK and India VIX snapshot (requires `UPSTOX_ANALYTICS_TOKEN`) |
 | `GET /api/agents/status` | AI research-agent readiness without exposing credentials |
-| `POST /api/agents/research` | Run the three-stage evidence-grounded research workflow (requires `OPENAI_API_KEY`) |
+| `POST /api/agents/research` | Run the six-agent evidence-grounded research workflow (requires `OPENAI_API_KEY`) |
 | `GET /api/macro/archive/{indicator_key}?limit=12` | Stored source-native observations (requires `DATABASE_URL`) |
 | `GET /api/macro/revisions/{indicator_key}?limit=20` | Detected upstream value revisions (requires `DATABASE_URL`) |
 | `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)
