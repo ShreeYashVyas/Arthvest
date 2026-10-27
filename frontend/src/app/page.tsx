@@ -1,5 +1,6 @@
-import Link from "next/link";
 "use client";
+
+import Link from "next/link";
 
 import { useEffect, useState } from "react";
 import { fetchHistoricalAnalytics, fetchMacroCatalog, fetchMacroComparison, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchMacroRevisions, fetchMacroSourceChecks, fetchMacroStorageStatus, fetchUSMacroScore, type HistoricalAnalytics, type MacroCatalog, type MacroComparison, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type MacroRevisions, type MacroSourceChecks, type MacroStorageStatus, type USMacroScore } from "@/lib/api";
