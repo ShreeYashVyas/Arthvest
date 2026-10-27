@@ -14,12 +14,14 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 - In-process 15-minute source-series cache; optional SQLAlchemy persistence for source observations, upstream revisions, and fetch successes/failures; descriptive analytics, relative comparison and scheduled archive ingestion.
 - GitHub Actions workflow for backend tests and frontend production build.
 - Optional Upstox-powered India Market Pulse page for read-only NIFTY 50, NIFTY BANK and India VIX quote snapshots; the token stays in the backend environment.
+- Optional OpenAI Agents SDK research council: a macro analyst and India market analyst produce evidence-bound specialist reports, then a lead analyst synthesizes a brief.
 
 ## Technology
 
 - **Frontend:** Next.js, React, TypeScript, Tailwind CSS, Lucide
 - **Backend:** Python, FastAPI, Pydantic
 - **Source data:** published FRED series with source-attribution links; optional Upstox Market Quote API for Indian indices
+- **AI research:** optional OpenAI Agents SDK with structured specialist reports and a lead research analyst
 - **Persistence:** optional SQLAlchemy archive for observations, revisions, and source checks
 - **Database:** PostgreSQL through `DATABASE_URL` when configured; live source feeds still run without persistence
 
@@ -104,6 +106,24 @@ Live fetching works without a database. To retain source observations, detect up
 
 Generate an Analytics Token in the [Upstox Developer Apps portal](https://account.upstox.com/developer/apps) and place it in `backend/.env` as `UPSTOX_ANALYTICS_TOKEN`. This is a read-only integration for market-data GET APIs; the token is never returned by Arthvest endpoints or shipped to the browser. The `/markets` page shows NIFTY 50, NIFTY BANK, and India VIX quotes from Upstox. An absent token is reported explicitly, and absent quotes are never replaced with sample values. See [Upstox Analytics Token documentation](https://upstox.com/developer/api-documentation/analytics-token/) and the [Full Market Quotes API](https://upstox.com/developer/api-documentation/get-full-market-quote/).
 
+## Optional AI research agents
+
+The AI Research Council is an optional, read-only research workflow powered by the OpenAI Agents SDK. It runs a Macro Analyst and an India Market Analyst in parallel, then asks a Lead Research Analyst to synthesize their structured reports. The context is collected server-side from the configured FRED-backed indicators and, when available, the existing read-only Upstox quote endpoint. The page shows the source observations separately from AI interpretation.
+
+Configure these values in the untracked `backend/.env` file, then restart FastAPI:
+
+```dotenv
+OPENAI_API_KEY=your_openai_api_key
+ARTHVEST_AGENT_MODEL=gpt-4.1-mini
+```
+
+The OpenAI key is different from the Upstox API key/Analytics Token. It is only read by the backend; do not add it to `frontend/.env.local`, source control, or client-side code. AI runs require an OpenAI API account with API access and may incur usage charges. The default model can be changed through `ARTHVEST_AGENT_MODEL`.
+
+- Agent status: `GET /api/agents/status`
+- Generate a research brief: `POST /api/agents/research` with JSON body `{"question":"Summarize current macro risks for India" }`
+
+This is descriptive decision support, not a calibrated forecast or personalized financial advice. Agents must not invent unavailable readings, stale observations remain marked, market quote gaps are disclosed, and no agent can place or modify trades. Each research run makes three model runs (two specialists in parallel plus the lead synthesis).
+
 ## Archived historical analytics
 
 The optional archive can power a descriptive analytics endpoint such as `/api/macro/analytics/fed-funds?limit=12`. It reports the oldest/latest values in the returned window, absolute and relative change, direction, mean, min/max, and population standard deviation. The endpoint requires a reachable configured database and at least two archived display observations. For U.S. CPI inflation it derives year-over-year inflation from archived CPI index levels, matching the dashboard's units. These are descriptive statistics only—not a calibrated regime score or forecast. `limit` is between 2 and 60.
@@ -122,6 +142,8 @@ The optional archive can power a descriptive analytics endpoint such as `/api/ma
 | `GET /api/macro/storage` | Database readiness and archive counts |
 | `GET /api/market/upstox/status` | Upstox token readiness without exposing credentials |
 | `GET /api/market/upstox/quotes` | Read-only NIFTY 50, NIFTY BANK and India VIX snapshot (requires `UPSTOX_ANALYTICS_TOKEN`) |
+| `GET /api/agents/status` | AI research-agent readiness without exposing credentials |
+| `POST /api/agents/research` | Run the three-stage evidence-grounded research workflow (requires `OPENAI_API_KEY`) |
 | `GET /api/macro/archive/{indicator_key}?limit=12` | Stored source-native observations (requires `DATABASE_URL`) |
 | `GET /api/macro/revisions/{indicator_key}?limit=20` | Detected upstream value revisions (requires `DATABASE_URL`) |
 | `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)
@@ -141,7 +163,7 @@ Indicator keys, formulas, sources and freshness thresholds are documented in [do
 
 ## Current limitations
 
-Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. The Upstox Market Pulse is optional and requires `UPSTOX_ANALYTICS_TOKEN`; it currently provides quote snapshots, not continuous WebSocket streaming or archived market candles. A geopolitical event model and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
+Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. The Upstox Market Pulse is optional and requires `UPSTOX_ANALYTICS_TOKEN`; it currently provides quote snapshots, not continuous WebSocket streaming or archived market candles. The AI Research Council is optional and requires `OPENAI_API_KEY`; each brief uses three model runs and may incur OpenAI API charges. A geopolitical event model and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
 
 
 ## Cross-indicator historical comparison
