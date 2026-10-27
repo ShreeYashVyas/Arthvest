@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useEffect, useState } from "react";
 import { fetchHistoricalAnalytics, fetchMacroCatalog, fetchMacroComparison, fetchMacroHistory, fetchMacroOverview, fetchMacroQuality, fetchMacroRevisions, fetchMacroSourceChecks, fetchMacroStorageStatus, fetchUSMacroScore, type HistoricalAnalytics, type MacroCatalog, type MacroComparison, type MacroHistory, type MacroHistoryPoint, type MacroOverview, type MacroQuality, type MacroRevisions, type MacroSourceChecks, type MacroStorageStatus, type USMacroScore } from "@/lib/api";
 import {
@@ -550,6 +552,7 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3 text-xs text-muted">
+            <Link href="/markets" className="rounded-lg border border-accent/25 bg-accent/5 px-3 py-2 text-accent transition hover:border-accent/50">MARKET PULSE ↗</Link>
             <span className="hidden sm:inline">PHASE 01 / FOUNDATION</span>
             <span className="h-4 w-px bg-line" />
             <span className="flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-2">
