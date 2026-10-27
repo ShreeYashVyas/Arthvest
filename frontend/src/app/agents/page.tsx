@@ -14,6 +14,7 @@ type AgentStatus = {
   provider: string;
   configured: boolean;
   model: string;
+  max_requests_per_hour_per_client?: number;
   agents: { name: string; role: string }[];
   note: string;
 };
@@ -50,9 +51,16 @@ type ResearchResponse = {
   evidence: {
     generated_at: string;
     macro_observations: MacroEvidence[];
+    macro_history?: { key: string; status: string; point_count?: number }[];
     market_snapshot: {
       status: string; provider?: string; source_url?: string; data_as_of?: string | null;
       reason?: string; quotes: Quote[];
+    };
+    news_snapshot: {
+      status: string; provider?: string; source_url?: string; generated_at?: string;
+      fetched_at?: string | null; timespan_hours?: number; count: number; cached?: boolean;
+      reason?: string;
+      articles: { key: string; title: string; url: string; domain?: string; seen_at?: string | null; source_country?: string | null; language?: string | null }[];
     };
   };
   disclaimer: string;
@@ -183,6 +191,7 @@ export default function AgentsPage() {
                   </span>
                 </div>
                 <div className="mt-2 text-xs text-muted">Model: {agentStatus.model}</div>
+                <div className="mt-1 text-xs text-muted">Limit: {agentStatus.max_requests_per_hour_per_client ?? 5} research runs/hour per client on this backend process</div>
                 <p className="mt-3 text-xs leading-5 text-muted">{agentStatus.note}</p>
                 <div className="mt-4 space-y-3 border-t border-line pt-4">
                   {agentStatus.agents.map((agent) => (
@@ -231,6 +240,17 @@ export default function AgentsPage() {
 
         {research && (
           <section className="mt-8 space-y-6">
+            <div className="rounded-2xl border border-line bg-panel p-4">
+              <div className="mb-3 text-[10px] uppercase tracking-[0.16em] text-muted">Run status · all six roles</div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {research.agents.map((agent) => (
+                  <div key={agent.name} className="flex items-start justify-between gap-3 rounded-lg border border-line/70 bg-[#0b1017] px-3 py-2">
+                    <span className="text-xs text-white">{agent.name}</span>
+                    <span className={agent.status === "completed" ? "shrink-0 text-[10px] text-accent" : "shrink-0 text-[10px] text-amber-200"}>{agent.status.replaceAll("_", " ")}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-accent"><CheckCircle2 size={13} /> Research run complete</div>
@@ -300,6 +320,37 @@ export default function AgentsPage() {
                   {quote.timestamp && <div className="mt-2 text-[10px] text-muted">{formatDate(quote.timestamp)}</div>}
                 </div>)}</div> : <div className="flex items-start gap-2 text-sm leading-6 text-amber-100/80"><CircleAlert size={15} className="mt-1 shrink-0" /><span>{research.evidence.market_snapshot.reason || "No usable Upstox index quotes were available during this run."} <Link href="/markets" className="text-accent hover:underline">Check Market Pulse</Link></span></div>}
                 {research.evidence.market_snapshot.source_url && <a href={research.evidence.market_snapshot.source_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-accent hover:underline">Upstox source <ExternalLink size={11} /></a>}
+              </div>
+              <div className="mt-5 border-t border-line pt-5">
+                <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-muted">Recent geopolitical headlines</div>
+                <div className="mb-3 text-xs leading-5 text-muted">
+                  {research.evidence.news_snapshot.provider || "GDELT"} · Last {research.evidence.news_snapshot.timespan_hours ?? 24} hours
+                  {research.evidence.news_snapshot.cached ? " · cached snapshot" : ""}
+                </div>
+                {research.evidence.news_snapshot.status === "available" && research.evidence.news_snapshot.articles.length > 0 ? (
+                  <div className="space-y-3">
+                    {research.evidence.news_snapshot.articles.map((article) => (
+                      <div key={article.key} className="flex flex-col gap-1 border-b border-line/70 pb-3 last:border-0">
+                        <a href={article.url} target="_blank" rel="noreferrer" className="text-sm leading-6 text-white hover:text-accent">
+                          {article.title} <ExternalLink size={11} className="ml-1 inline" />
+                        </a>
+                        <div className="text-[10px] text-muted">
+                          {article.domain || "Publisher not supplied"} · Seen by GDELT: {formatDate(article.seen_at)}
+                          {article.source_country ? " · " + article.source_country : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs leading-5 text-amber-100/80">
+                    {research.evidence.news_snapshot.reason || "No matching recent headlines were supplied. The geopolitical agent must not infer that no event occurred."}
+                  </p>
+                )}
+                {research.evidence.news_snapshot.source_url && (
+                  <a href={research.evidence.news_snapshot.source_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-accent hover:underline">
+                    News source and methodology <ExternalLink size={11} />
+                  </a>
+                )}
               </div>
               <p className="mt-5 border-t border-line pt-4 text-[11px] leading-5 text-muted">{research.disclaimer}</p>
             </article>
