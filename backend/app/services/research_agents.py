@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -206,11 +207,11 @@ def _build_agents() -> tuple[Agent, Agent, Agent, Agent, Agent, Agent]:
     geopolitics_agent = Agent(
         name="Geopolitical Risk Analyst", model=model, output_type=SpecialistReport,
         instructions=(
-            "Assess geopolitical risk only to the extent supported by the provided context. No live news source "
-            "is connected: do not claim to know today's conflicts, announcements, sanctions or events unless "
-            "explicitly present in the evidence. Distinguish general transmission channels (energy, trade, FX, "
-            "risk appetite) from observed events. Label unsupported current-event questions as a data gap. "
-            "Use only evidence keys present in the context; no invented facts or trading instructions."
+            "Analyze the supplied recent GDELT headline metadata. Headlines are unverified signals, not independently "
+            "verified facts; do not claim to have read article bodies or independently confirmed events. Separate "
+            "reported headlines, possible energy/trade/FX/supply-chain transmission channels, and observed macro/market "
+            "changes. If the feed is empty or unavailable, report a data gap and make no claims about current events. "
+            "Use only evidence keys in the input; do not invent facts or give trading instructions."
         ),
     )
     cross_asset_agent = Agent(
@@ -236,11 +237,10 @@ def _build_agents() -> tuple[Agent, Agent, Agent, Agent, Agent, Agent]:
     lead_agent = Agent(
         name="Lead Research Analyst", model=model, output_type=ResearchBrief,
         instructions=(
-            "Synthesize all five specialist reports and the raw evidence into a concise research brief. Give "
-            "priority to the Risk & Evidence Auditor's valid objections. Challenge unsupported claims and prefer "
-            "explicit gaps over speculation. Evidence keys must refer to supplied indicator or quote keys. "
-            "Do not claim causation from co-movement, give personalized financial advice, or present output as "
-            "a calibrated forecast. State material limitations clearly."
+            "Synthesize all five specialist/audit reports and raw evidence. Prioritize valid Risk & Evidence Auditor "
+            "objections. Geopolitical titles are unverified headlines, not proven facts. Prefer explicit gaps over "
+            "speculation. Use only supplied evidence keys. Do not claim causation from co-movement, give personalized "
+            "advice, or present the brief as a calibrated forecast. Produce concise findings and limitations."
         ),
     )
     return macro_agent, market_agent, geopolitics_agent, cross_asset_agent, auditor_agent, lead_agent
