@@ -192,6 +192,7 @@ export default function MarketsPage() {
             <Link href="/" className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 transition hover:border-accent/50 hover:text-accent">
               <ArrowLeft size={13} /> Macro terminal
             </Link>
+            <Link href="/agents" className="rounded-lg border border-line px-3 py-2 transition hover:border-accent/50 hover:text-accent">AI RESEARCH ↗</Link>
             <span className="hidden sm:inline">PHASE 02 / MARKET PULSE</span>
             <span className="h-4 w-px bg-line" />
             <span className="flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-2">
