@@ -43,6 +43,14 @@ def test_research_requires_openai_key(monkeypatch) -> None:
     assert "OPENAI_API_KEY" in response.json()["detail"]
 
 
+def test_research_rejects_whitespace_question(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    response = client.post("/api/agents/research", json={"question": "    "})
+
+    assert response.status_code == 422
+
+
 def test_research_rejects_empty_question(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
