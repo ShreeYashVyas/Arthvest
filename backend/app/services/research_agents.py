@@ -12,7 +12,7 @@ from agents import Agent, Runner
 from pydantic import BaseModel, Field
 
 from app.services import geopolitical_news, upstox_service
-from app.services.macro_service import INDICATORS, MacroDataError, fetch_macro_indicator
+from app.services.macro_service import INDICATORS, MacroDataError, fetch_macro_history, fetch_macro_indicator
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ AGENT_NAMES = [
     {"name": "Macro Analyst", "role": "Interprets available macroeconomic observations and freshness."},
     {"name": "India Market Analyst", "role": "Interprets Upstox index quotes when available; reports gaps otherwise."},
     {"name": "Lead Research Analyst", "role": "Synthesizes findings and challenges unsupported claims."},
-    {"name": "Geopolitical Risk Analyst", "role": "Maps geopolitical risks only when supplied evidence supports them; no live news feed is configured yet."},
+    {"name": "Geopolitical Risk Analyst", "role": "Analyzes recent GDELT headline signals and their possible economic transmission channels."},
     {"name": "Cross-Asset Analyst", "role": "Explores descriptive relationships among available macro and market observations without claiming causation."},
     {"name": "Risk & Evidence Auditor", "role": "Audits evidence references, freshness, uncertainty and unsupported conclusions."},
 ]
@@ -112,6 +112,36 @@ def _load_one_indicator(key: str) -> dict[str, object]:
         }
 
 
+def _load_one_history(key: str) -> dict[str, object]:
+    """Load a short source-attributed series for descriptive macro trend context."""
+    config = INDICATORS[key]
+    try:
+        result = fetch_macro_history(key, limit=12)
+        points = []
+        for point in result.get("points", []):
+            if not isinstance(point, dict):
+                continue
+            obs_date, value = point.get("observation_date"), point.get("value")
+            if isinstance(obs_date, str) and isinstance(value, (int, float)) and math.isfinite(float(value)):
+                points.append({"observation_date": obs_date, "value": float(value)})
+        return {
+            "key": key,
+            "status": "available" if points else "insufficient-history",
+            "unit": result.get("unit", config["unit"]),
+            "frequency": result.get("frequency", config["frequency"]),
+            "source_url": result.get("source_url", f"https://fred.stlouisfed.org/series/{config['series_id']}"),
+            "point_count": len(points),
+            "points": points,
+        }
+    except Exception as exc:
+        logger.warning("Research history unavailable for %s (%s)", key, type(exc).__name__)
+        return {
+            "key": key, "status": "unavailable", "unit": config["unit"],
+            "frequency": config["frequency"], "point_count": 0, "points": [],
+            "source_url": f"https://fred.stlouisfed.org/series/{config['series_id']}",
+        }
+
+
 def _load_evidence_context() -> dict[str, object]:
     """Collect validated macro observations and a best-effort read-only market snapshot."""
     keys = list(INDICATORS)
@@ -143,6 +173,7 @@ def _load_evidence_context() -> dict[str, object]:
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "macro_observations": macro_items,
+        "macro_history": macro_history,
         "market_snapshot": market,
         "news_snapshot": news,
         "data_quality_notes": [
@@ -221,6 +252,55 @@ def _validate_report(value: object) -> SpecialistReport:
     return SpecialistReport.model_validate(value)
 
 
+def _valid_evidence_keys(context: dict[str, object]) -> set[str]:
+    """Build the canonical evidence key set for this research run."""
+    keys: set[str] = set()
+    for item in context.get("macro_observations", []):
+        if isinstance(item, dict) and isinstance(item.get("key"), str):
+            keys.add(item["key"])
+    market = context.get("market_snapshot", {})
+    quotes = market.get("quotes", []) if isinstance(market, dict) else []
+    for item in quotes:
+        if isinstance(item, dict) and isinstance(item.get("key"), str):
+            keys.add(item["key"])
+    news = context.get("news_snapshot", {})
+    articles = news.get("articles", []) if isinstance(news, dict) else []
+    for item in articles:
+        if isinstance(item, dict) and isinstance(item.get("key"), str):
+            keys.add(item["key"])
+    return keys
+
+
+def _sanitize_specialist_report(report: SpecialistReport, valid_keys: set[str]) -> SpecialistReport:
+    """Remove model-generated evidence keys that do not exist in the source index."""
+    removed = any(key not in valid_keys for finding in report.findings for key in finding.evidence_keys)
+    findings = [
+        finding.model_copy(update={
+            "evidence_keys": [key for key in finding.evidence_keys if key in valid_keys]
+        })
+        for finding in report.findings
+    ]
+    gaps = list(report.data_gaps)
+    if removed:
+        gaps.append("Unrecognized evidence references were removed by server-side validation.")
+    return report.model_copy(update={"findings": findings, "data_gaps": gaps})
+
+
+def _sanitize_research_brief(brief: ResearchBrief, valid_keys: set[str]) -> ResearchBrief:
+    """Validate evidence identifiers in the final brief before returning it."""
+    removed = any(key not in valid_keys for finding in brief.key_findings for key in finding.evidence_keys)
+    findings = [
+        finding.model_copy(update={
+            "evidence_keys": [key for key in finding.evidence_keys if key in valid_keys]
+        })
+        for finding in brief.key_findings
+    ]
+    limitations = list(brief.limitations)
+    if removed:
+        limitations.append("Unsupported evidence references were removed by server-side validation.")
+    return brief.model_copy(update={"key_findings": findings, "limitations": limitations})
+
+
 async def run_research(question: str) -> dict[str, object]:
     """Run four specialist agents concurrently, audit their output, then synthesize."""
     if not os.getenv("OPENAI_API_KEY", "").strip():
@@ -228,6 +308,7 @@ async def run_research(question: str) -> dict[str, object]:
 
     context = await asyncio.to_thread(_load_evidence_context)
     macro_agent, market_agent, geopolitics_agent, cross_asset_agent, auditor_agent, lead_agent = _build_agents()
+    valid_keys = _valid_evidence_keys(context)
     context_json = json.dumps(context, ensure_ascii=False, allow_nan=False)
     shared_input = f"Research question: {question}\nEvidence JSON:\n{context_json}"
     macro_input = "Analyze the macroeconomic evidence.\n" + shared_input
@@ -255,7 +336,7 @@ async def run_research(question: str) -> dict[str, object]:
         "cross_asset_report": cross_asset_report.model_dump(mode="json"),
     }, ensure_ascii=False, allow_nan=False)
     audit_result = await Runner.run(auditor_agent, audit_input, max_turns=2)
-    audit_report = _validate_report(audit_result.final_output)
+    audit_report = _sanitize_specialist_report(_validate_report(audit_result.final_output), valid_keys)
 
     lead_input = json.dumps({
         "question": question,
@@ -272,8 +353,10 @@ async def run_research(question: str) -> dict[str, object]:
     brief = lead_result.final_output
     if not isinstance(brief, ResearchBrief):
         brief = ResearchBrief.model_validate(brief)
+    brief = _sanitize_research_brief(brief, valid_keys)
 
     market_available = context["market_snapshot"]["status"] == "available"
+    news_status = context.get("news_snapshot", {}).get("status", "unavailable")
     news_status = context.get("news_snapshot", {}).get("status", "unavailable")
     return {
         "status": "ready",
