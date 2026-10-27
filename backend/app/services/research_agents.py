@@ -1,4 +1,4 @@
-"""Evidence-grounded multi-agent research workflow for Arthvest."""
+"""Six-role, evidence-grounded research council for Arthvest."""
 
 import asyncio
 import json
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class EvidenceFinding(BaseModel):
-    """A concise analytical claim tied to one or more indicator keys."""
+    """A concise analytical claim tied to evidence identifiers."""
 
     title: str = Field(min_length=1, max_length=180)
     explanation: str = Field(min_length=1, max_length=1200)
@@ -26,7 +26,7 @@ class EvidenceFinding(BaseModel):
 
 
 class SpecialistReport(BaseModel):
-    """Structured output from a specialist agent."""
+    """Structured output from one specialist."""
 
     summary: str = Field(min_length=1, max_length=1800)
     findings: list[EvidenceFinding] = Field(default_factory=list)
@@ -36,7 +36,7 @@ class SpecialistReport(BaseModel):
 
 
 class ResearchBrief(BaseModel):
-    """Structured, user-facing output from the lead research agent."""
+    """Structured user-facing output from the lead analyst."""
 
     headline: str = Field(min_length=1, max_length=180)
     executive_summary: str = Field(min_length=1, max_length=2400)
@@ -49,21 +49,26 @@ class ResearchBrief(BaseModel):
 AGENT_NAMES = [
     {"name": "Macro Analyst", "role": "Interprets available macroeconomic observations and freshness."},
     {"name": "India Market Analyst", "role": "Interprets Upstox index quotes when available; reports gaps otherwise."},
-    {"name": "Lead Research Analyst", "role": "Challenges and synthesizes the specialist reports into a brief."},
+    {"name": "Lead Research Analyst", "role": "Synthesizes findings and challenges unsupported claims."},
+    {"name": "Geopolitical Risk Analyst", "role": "Maps geopolitical risks only when supplied evidence supports them; no live news feed is configured yet."},
+    {"name": "Cross-Asset Analyst", "role": "Explores descriptive relationships among available macro and market observations without claiming causation."},
+    {"name": "Risk & Evidence Auditor", "role": "Audits evidence references, freshness, uncertainty and unsupported conclusions."},
 ]
 
 
 def get_agent_status() -> dict[str, object]:
-    """Expose safe configuration status without exposing secrets."""
+    """Expose safe configuration status without revealing credentials."""
+    configured = bool(os.getenv("OPENAI_API_KEY", "").strip())
     return {
         "provider": "OpenAI Agents SDK",
-        "configured": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+        "configured": configured,
         "model": os.getenv("ARTHVEST_AGENT_MODEL", "gpt-4.1-mini"),
         "agents": AGENT_NAMES,
+        "workflow": "six-role council",
         "note": (
             "Configure OPENAI_API_KEY in backend/.env to run research."
-            if not os.getenv("OPENAI_API_KEY", "").strip()
-            else "Research agents are configured. Runs use source snapshots available at request time."
+            if not configured
+            else "Six-role council configured. Geopolitical analysis is limited by the supplied evidence; no dedicated live-news feed is connected."
         ),
     }
 
@@ -87,38 +92,28 @@ def _load_one_indicator(key: str) -> dict[str, object]:
             "retrieved_at": data.get("retrieved_at"),
             "freshness_status": data.get("freshness_status", "unknown"),
             "source": data.get("source", config["source"]),
-            "source_url": data.get(
-                "source_url", f"https://fred.stlouisfed.org/series/{config['series_id']}"
-            ),
+            "source_url": data.get("source_url", f"https://fred.stlouisfed.org/series/{config['series_id']}"),
             "calculation": data.get("calculation", config["calculation"]),
         }
     except MacroDataError:
         return {
-            "key": key,
-            "status": "unavailable",
-            "indicator": config["indicator"],
-            "series_id": config["series_id"],
-            "unit": config["unit"],
-            "source": config["source"],
+            "key": key, "status": "unavailable", "indicator": config["indicator"],
+            "series_id": config["series_id"], "unit": config["unit"], "source": config["source"],
             "source_url": f"https://fred.stlouisfed.org/series/{config['series_id']}",
             "reason": "Source is unavailable or its response could not be validated.",
         }
     except Exception as exc:
         logger.warning("Research context could not load indicator %s (%s)", key, type(exc).__name__)
         return {
-            "key": key,
-            "status": "unavailable",
-            "indicator": config["indicator"],
-            "series_id": config["series_id"],
-            "unit": config["unit"],
-            "source": config["source"],
+            "key": key, "status": "unavailable", "indicator": config["indicator"],
+            "series_id": config["series_id"], "unit": config["unit"], "source": config["source"],
             "source_url": f"https://fred.stlouisfed.org/series/{config['series_id']}",
             "reason": "Source is temporarily unavailable.",
         }
 
 
 def _load_evidence_context() -> dict[str, object]:
-    """Collect validated source observations and a best-effort market snapshot."""
+    """Collect validated macro observations and a best-effort read-only market snapshot."""
     keys = list(INDICATORS)
     with ThreadPoolExecutor(max_workers=min(8, len(keys))) as executor:
         macro_items = list(executor.map(_load_one_indicator, keys))
@@ -138,8 +133,7 @@ def _load_evidence_context() -> dict[str, object]:
             market["reason"] = "The provider returned no usable index quotes."
     except upstox_service.UpstoxServiceError:
         market = {
-            "status": "unavailable",
-            "provider": "Upstox",
+            "status": "unavailable", "provider": "Upstox",
             "reason": "Upstox is not configured or its read-only quote endpoint is unavailable.",
             "quotes": [],
         }
@@ -151,98 +145,132 @@ def _load_evidence_context() -> dict[str, object]:
         "data_quality_notes": [
             "Observation dates describe the source period; retrieval time does not make an old observation fresh.",
             "Unavailable or stale values must remain explicit and must not be imputed.",
-            "The current U.S. conditions subscore is provisional and is not a market-return forecast.",
+            "No dedicated geopolitical news source is connected; geopolitical conclusions must not be framed as live-news monitoring.",
+            "Cross-asset observations are descriptive and do not establish causal relationships.",
         ],
     }
 
 
-def _build_agents() -> tuple[Agent, Agent, Agent]:
+def _build_agents() -> tuple[Agent, Agent, Agent, Agent, Agent, Agent]:
     model = _model_name()
     macro_agent = Agent(
-        name="Macro Analyst",
-        model=model,
-        output_type=SpecialistReport,
+        name="Macro Analyst", model=model, output_type=SpecialistReport,
         instructions=(
-            "You are Arthvest's macroeconomics research specialist. Analyze only the JSON evidence "
-            "provided by the application. Distinguish source observation dates from retrieval times, "
-            "and call out stale, in-progress, unavailable, annual, and quarterly data correctly. "
-            "Use evidence_keys only from the supplied indicator keys. Do not invent figures, sources, "
-            "events, causal links, forecasts, or trading advice. If evidence is weak, say so. "
-            "Return a concise structured report."
+            "Analyze only supplied macro evidence. Distinguish observation dates from retrieval times; "
+            "flag stale, in-progress, annual, quarterly and unavailable data. Use evidence_keys only from "
+            "supplied indicator keys. Never invent figures, sources, events, causation, forecasts or trade advice."
         ),
     )
     market_agent = Agent(
-        name="India Market Analyst",
-        model=model,
-        output_type=SpecialistReport,
+        name="India Market Analyst", model=model, output_type=SpecialistReport,
         instructions=(
-            "You are Arthvest's India market-data specialist. Analyze only the supplied Upstox snapshot. "
-            "Use only available quote values and the supplied timestamps. If quotes are unavailable, "
-            "state that market analysis is blocked and do not infer prices or market direction. "
-            "Never invent external news, market breadth, price history, or volatility statistics. "
-            "Do not make trade recommendations. evidence_keys may use only quote keys from the input. "
-            "Return a concise structured report."
+            "Analyze only the supplied Upstox snapshot. If quotes are unavailable, state that clearly. "
+            "Never invent news, market breadth, price history or volatility statistics. Do not recommend trades. "
+            "Use only supplied quote keys as evidence."
+        ),
+    )
+    geopolitics_agent = Agent(
+        name="Geopolitical Risk Analyst", model=model, output_type=SpecialistReport,
+        instructions=(
+            "Assess geopolitical risk only to the extent supported by the provided context. No live news source "
+            "is connected: do not claim to know today's conflicts, announcements, sanctions or events unless "
+            "explicitly present in the evidence. Distinguish general transmission channels (energy, trade, FX, "
+            "risk appetite) from observed events. Label unsupported current-event questions as a data gap. "
+            "Use only evidence keys present in the context; no invented facts or trading instructions."
+        ),
+    )
+    cross_asset_agent = Agent(
+        name="Cross-Asset Analyst", model=model, output_type=SpecialistReport,
+        instructions=(
+            "Explore descriptive relationships only among the supplied macro observations and available index "
+            "quotes. The context may contain only latest values, not aligned time series, so do not calculate "
+            "correlations, returns, beta or lead-lag effects unless the required historical observations exist. "
+            "Do not imply causation or invent asset classes or values. Explicitly state data gaps and use only "
+            "provided evidence keys."
+        ),
+    )
+    auditor_agent = Agent(
+        name="Risk & Evidence Auditor", model=model, output_type=SpecialistReport,
+        instructions=(
+            "Audit the question, raw evidence, and every specialist report for unsupported factual claims, "
+            "missing/invalid evidence references, stale or unavailable data treated as current, causal overreach, "
+            "false precision, and overconfident language. Report concrete limitations and monitoring checks. "
+            "You are a critic, not a source of new market facts. Never invent evidence or give trade advice. "
+            "Use only evidence keys supplied in the audit input."
         ),
     )
     lead_agent = Agent(
-        name="Lead Research Analyst",
-        model=model,
-        output_type=ResearchBrief,
+        name="Lead Research Analyst", model=model, output_type=ResearchBrief,
         instructions=(
-            "You are the lead analyst for Arthvest, a research-first macro intelligence product. "
-            "Synthesize the provided raw evidence and specialist reports; challenge unsupported claims "
-            "and prefer explicit gaps over speculation. Evidence keys must refer to supplied indicator "
-            "keys or quote keys. Do not claim causation from co-movement. Never give personalized "
-            "financial advice or trading instructions. State that this is descriptive decision support, "
-            "not a forecast, where relevant. Produce a readable research brief with concise findings."
+            "Synthesize all five specialist reports and the raw evidence into a concise research brief. Give "
+            "priority to the Risk & Evidence Auditor's valid objections. Challenge unsupported claims and prefer "
+            "explicit gaps over speculation. Evidence keys must refer to supplied indicator or quote keys. "
+            "Do not claim causation from co-movement, give personalized financial advice, or present output as "
+            "a calibrated forecast. State material limitations clearly."
         ),
     )
-    return macro_agent, market_agent, lead_agent
+    return macro_agent, market_agent, geopolitics_agent, cross_asset_agent, auditor_agent, lead_agent
+
+
+def _validate_report(value: object) -> SpecialistReport:
+    if isinstance(value, SpecialistReport):
+        return value
+    return SpecialistReport.model_validate(value)
 
 
 async def run_research(question: str) -> dict[str, object]:
-    """Run two specialists in parallel and a lead agent over their evidence-grounded reports."""
+    """Run four specialist agents concurrently, audit their output, then synthesize."""
     if not os.getenv("OPENAI_API_KEY", "").strip():
         raise RuntimeError("OPENAI_API_KEY is not configured.")
 
     context = await asyncio.to_thread(_load_evidence_context)
-    macro_agent, market_agent, lead_agent = _build_agents()
+    macro_agent, market_agent, geopolitics_agent, cross_asset_agent, auditor_agent, lead_agent = _build_agents()
     context_json = json.dumps(context, ensure_ascii=False, allow_nan=False)
-    macro_input = (
-        "Analyze the macro portion of this evidence and the user's research question.\n"
-        f"Question: {question}\nEvidence JSON:\n{context_json}"
-    )
-    market_input = (
-        "Analyze the Indian market portion of this evidence and the user's research question.\n"
-        f"Question: {question}\nEvidence JSON:\n{context_json}"
-    )
+    shared_input = f"Research question: {question}\nEvidence JSON:\n{context_json}"
+    macro_input = "Analyze the macroeconomic evidence.\n" + shared_input
+    market_input = "Analyze the Indian market snapshot.\n" + shared_input
+    geopolitical_input = "Assess geopolitical risk transmission channels and explicitly report the absence of live news evidence.\n" + shared_input
+    cross_asset_input = "Analyze descriptive cross-asset context and state whether aligned time series are available.\n" + shared_input
 
-    macro_result, market_result = await asyncio.gather(
+    macro_result, market_result, geopolitical_result, cross_asset_result = await asyncio.gather(
         Runner.run(macro_agent, macro_input, max_turns=2),
         Runner.run(market_agent, market_input, max_turns=2),
+        Runner.run(geopolitics_agent, geopolitical_input, max_turns=2),
+        Runner.run(cross_asset_agent, cross_asset_input, max_turns=2),
     )
-    macro_report = macro_result.final_output
-    market_report = market_result.final_output
-    if not isinstance(macro_report, SpecialistReport):
-        macro_report = SpecialistReport.model_validate(macro_report)
-    if not isinstance(market_report, SpecialistReport):
-        market_report = SpecialistReport.model_validate(market_report)
+    macro_report = _validate_report(macro_result.final_output)
+    market_report = _validate_report(market_result.final_output)
+    geopolitical_report = _validate_report(geopolitical_result.final_output)
+    cross_asset_report = _validate_report(cross_asset_result.final_output)
 
-    lead_input = json.dumps(
-        {
-            "question": question,
-            "evidence_context": context,
-            "macro_specialist_report": macro_report.model_dump(mode="json"),
-            "market_specialist_report": market_report.model_dump(mode="json"),
+    audit_input = json.dumps({
+        "question": question,
+        "evidence_context": context,
+        "macro_report": macro_report.model_dump(mode="json"),
+        "market_report": market_report.model_dump(mode="json"),
+        "geopolitical_report": geopolitical_report.model_dump(mode="json"),
+        "cross_asset_report": cross_asset_report.model_dump(mode="json"),
+    }, ensure_ascii=False, allow_nan=False)
+    audit_result = await Runner.run(auditor_agent, audit_input, max_turns=2)
+    audit_report = _validate_report(audit_result.final_output)
+
+    lead_input = json.dumps({
+        "question": question,
+        "evidence_context": context,
+        "specialist_reports": {
+            "macro": macro_report.model_dump(mode="json"),
+            "market": market_report.model_dump(mode="json"),
+            "geopolitical_risk": geopolitical_report.model_dump(mode="json"),
+            "cross_asset": cross_asset_report.model_dump(mode="json"),
+            "risk_evidence_audit": audit_report.model_dump(mode="json"),
         },
-        ensure_ascii=False,
-        allow_nan=False,
-    )
+    }, ensure_ascii=False, allow_nan=False)
     lead_result = await Runner.run(lead_agent, lead_input, max_turns=2)
     brief = lead_result.final_output
     if not isinstance(brief, ResearchBrief):
         brief = ResearchBrief.model_validate(brief)
 
+    market_available = context["market_snapshot"]["status"] == "available"
     return {
         "status": "ready",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -250,16 +278,19 @@ async def run_research(question: str) -> dict[str, object]:
         "model": _model_name(),
         "agents": [
             {"name": "Macro Analyst", "status": "completed"},
-            {
-                "name": "India Market Analyst",
-                "status": "completed" if context["market_snapshot"]["status"] == "available" else "partial",
-            },
+            {"name": "India Market Analyst", "status": "completed" if market_available else "partial"},
+            {"name": "Geopolitical Risk Analyst", "status": "completed_with_source_limitations"},
+            {"name": "Cross-Asset Analyst", "status": "completed_with_data_limitations"},
+            {"name": "Risk & Evidence Auditor", "status": "completed"},
             {"name": "Lead Research Analyst", "status": "completed"},
         ],
         "brief": brief.model_dump(mode="json"),
         "specialist_reports": {
             "macro": macro_report.model_dump(mode="json"),
             "market": market_report.model_dump(mode="json"),
+            "geopolitical_risk": geopolitical_report.model_dump(mode="json"),
+            "cross_asset": cross_asset_report.model_dump(mode="json"),
+            "risk_evidence_audit": audit_report.model_dump(mode="json"),
         },
         "evidence": context,
         "disclaimer": (
