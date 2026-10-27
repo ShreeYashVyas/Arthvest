@@ -75,7 +75,7 @@ def get_agent_status() -> dict[str, object]:
 
 
 def _model_name() -> str:
-    return os.getenv("ARTHVEST_AGENT_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+    return os.getenv("ARTHVEST_AGENT_MODEL", "gpt-6-luna").strip() or "gpt-6-luna"
 
 
 def _load_one_indicator(key: str) -> dict[str, object]:
@@ -146,8 +146,9 @@ def _load_one_history(key: str) -> dict[str, object]:
 def _load_evidence_context() -> dict[str, object]:
     """Collect validated macro observations and a best-effort read-only market snapshot."""
     keys = list(INDICATORS)
-    with ThreadPoolExecutor(max_workers=min(8, len(keys))) as executor:
+    with ThreadPoolExecutor(max_workers=min(16, len(keys) * 2)) as executor:
         macro_items = list(executor.map(_load_one_indicator, keys))
+        macro_history = list(executor.map(_load_one_history, keys))
 
     try:
         snapshot = upstox_service.get_market_quotes()
@@ -180,7 +181,7 @@ def _load_evidence_context() -> dict[str, object]:
         "data_quality_notes": [
             "Observation dates describe the source period; retrieval time does not make an old observation fresh.",
             "Unavailable or stale values must remain explicit and must not be imputed.",
-            "No dedicated geopolitical news source is connected; geopolitical conclusions must not be framed as live-news monitoring.",
+            "GDELT supplies headline metadata only; headlines are not independently verified facts.",
             "Cross-asset observations are descriptive and do not establish causal relationships.",
         ],
     }
@@ -312,8 +313,8 @@ async def run_research(question: str) -> dict[str, object]:
     shared_input = f"Research question: {question}\nEvidence JSON:\n{context_json}"
     macro_input = "Analyze the macroeconomic evidence.\n" + shared_input
     market_input = "Analyze the Indian market snapshot.\n" + shared_input
-    geopolitical_input = "Assess geopolitical risk transmission channels and explicitly report the absence of live news evidence.\n" + shared_input
-    cross_asset_input = "Analyze descriptive cross-asset context and state whether aligned time series are available.\n" + shared_input
+    geopolitical_input = "Analyze the supplied recent GDELT headlines as unverified signals and report gaps if unavailable.\n" + shared_input
+    cross_asset_input = "Describe macro history where available; do not claim correlations without aligned historical market prices.\n" + shared_input
 
     macro_result, market_result, geopolitical_result, cross_asset_result = await asyncio.gather(
         Runner.run(macro_agent, macro_input, max_turns=2),
@@ -321,10 +322,10 @@ async def run_research(question: str) -> dict[str, object]:
         Runner.run(geopolitics_agent, geopolitical_input, max_turns=2),
         Runner.run(cross_asset_agent, cross_asset_input, max_turns=2),
     )
-    macro_report = _validate_report(macro_result.final_output)
-    market_report = _validate_report(market_result.final_output)
-    geopolitical_report = _validate_report(geopolitical_result.final_output)
-    cross_asset_report = _validate_report(cross_asset_result.final_output)
+    macro_report = _sanitize_specialist_report(_validate_report(macro_result.final_output), valid_keys)
+    market_report = _sanitize_specialist_report(_validate_report(market_result.final_output), valid_keys)
+    geopolitical_report = _sanitize_specialist_report(_validate_report(geopolitical_result.final_output), valid_keys)
+    cross_asset_report = _sanitize_specialist_report(_validate_report(cross_asset_result.final_output), valid_keys)
 
     audit_input = json.dumps({
         "question": question,
@@ -355,7 +356,6 @@ async def run_research(question: str) -> dict[str, object]:
     brief = _sanitize_research_brief(brief, valid_keys)
 
     market_available = context["market_snapshot"]["status"] == "available"
-    news_status = context.get("news_snapshot", {}).get("status", "unavailable")
     news_status = context.get("news_snapshot", {}).get("status", "unavailable")
     return {
         "status": "ready",
