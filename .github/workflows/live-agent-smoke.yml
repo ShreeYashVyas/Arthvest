@@ -8,11 +8,12 @@ permissions:
 
 jobs:
   live-agent-smoke:
-    name: Run six real AI agent stages
+    name: Run six real AI agent stages (hosted OpenAI)
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ARTHVEST_AGENT_PROVIDER: openai
       ARTHVEST_AGENT_MODEL: ${{ vars.ARTHVEST_AGENT_MODEL || 'gpt-4.1-mini' }}
     steps:
       - name: Check out repository
