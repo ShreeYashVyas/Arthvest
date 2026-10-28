@@ -7,8 +7,10 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Literal
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
-from agents import Agent, Runner
+from agents import Agent, AsyncOpenAI, OpenAIChatCompletionsModel, Runner, set_tracing_disabled
 from pydantic import BaseModel, Field
 
 from app.services import upstox_service
@@ -56,26 +58,102 @@ AGENT_NAMES = [
 ]
 
 
-def get_agent_status() -> dict[str, object]:
-    """Expose safe configuration status without revealing credentials."""
-    configured = bool(os.getenv("OPENAI_API_KEY", "").strip())
-    return {
-        "provider": "OpenAI Agents SDK",
-        "configured": configured,
-        "model": os.getenv("ARTHVEST_AGENT_MODEL", "gpt-4.1-mini"),
-        "agents": AGENT_NAMES,
-        "workflow": "six-role council",
-        "note": (
-            "Configure OPENAI_API_KEY in backend/.env to run research."
-            if not configured
-            else "Six-role council configured. Geopolitical analysis is limited by the supplied evidence; no dedicated live-news feed is connected."
-        ),
-    }
+def _provider_name() -> str:
+    """Select the local free provider by default; cloud mode is opt-in."""
+    return os.getenv("ARTHVEST_LLM_PROVIDER", "ollama").strip().lower() or "ollama"
 
+def _ollama_base_url() -> str:
+    """Return the Ollama server root, accepting either root or /v1 URLs."""
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip().rstrip("/")
+    if base_url.endswith("/v1"):
+        base_url = base_url[:-3].rstrip("/")
+    return base_url
 
 def _model_name() -> str:
-    return os.getenv("ARTHVEST_AGENT_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+    """Use a compact local model by default; preserve an explicit model override."""
+    provider = _provider_name()
+    default = "qwen3:4b" if provider == "ollama" else "gpt-4.1-mini"
+    return os.getenv("ARTHVEST_AGENT_MODEL", default).strip() or default
 
+def _ollama_model_status() -> tuple[bool, str]:
+    """Check whether the local Ollama server and selected model are available."""
+    base_url = _ollama_base_url()
+    model_name = _model_name()
+    request = Request(base_url + "/api/tags", headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urlopen(request, timeout=2.0) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (URLError, TimeoutError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return (
+            False,
+            f"Ollama is not reachable at {base_url}. Start the Ollama app, then restart the Arthvest backend.",
+        )
+    rows = payload.get("models", []) if isinstance(payload, dict) else []
+    installed_names = {
+        item.get("name") or item.get("model")
+        for item in rows
+        if isinstance(item, dict) and isinstance(item.get("name") or item.get("model"), str)
+    }
+    wanted_names = {model_name}
+    if ":" not in model_name:
+        wanted_names.add(model_name + ":latest")
+    if not installed_names.intersection(wanted_names):
+        return (
+            False,
+            f"Local model {model_name} is not installed. In PowerShell, run: ollama pull {model_name}",
+        )
+    return (
+        True,
+        f"Local Ollama model {model_name} is ready. AI inference stays on this machine; no OpenAI API key is required.",
+    )
+
+def get_agent_status() -> dict[str, object]:
+    """Expose provider readiness without disclosing any credential."""
+    provider = _provider_name()
+    model = _model_name()
+    if provider == "ollama":
+        configured, note = _ollama_model_status()
+        display_provider = "Ollama (local)"
+    elif provider == "openai":
+        configured = bool(os.getenv("OPENAI_API_KEY", "").strip())
+        display_provider = "OpenAI API"
+        note = (
+            "Set OPENAI_API_KEY to enable cloud inference."
+            if not configured
+            else "OpenAI API configured. Research calls may incur API charges."
+        )
+    else:
+        configured = False
+        display_provider = f"Unsupported provider: {provider}"
+        note = "Set ARTHVEST_LLM_PROVIDER to ollama (local) or openai."
+
+    return {
+        "provider": display_provider,
+        "provider_key": provider,
+        "configured": configured,
+        "model": model,
+        "agents": AGENT_NAMES,
+        "workflow": "six-role council",
+        "note": note,
+    }
+
+def _build_model() -> object:
+    """Build the selected model adapter, disabling remote tracing for local mode."""
+    provider = _provider_name()
+    model_name = _model_name()
+    if provider == "ollama":
+        # Local mode must not need an OpenAI credential or make hidden paid API calls.
+        set_tracing_disabled(True)
+        client = AsyncOpenAI(
+            base_url=_ollama_base_url() + "/v1",
+            api_key="ollama",
+            timeout=120.0,
+        )
+        return OpenAIChatCompletionsModel(model=model_name, openai_client=client)
+    if provider == "openai":
+        set_tracing_disabled(False)
+        return model_name
+    raise RuntimeError("Unsupported ARTHVEST_LLM_PROVIDER. Use ollama or openai.")
 
 def _load_one_indicator(key: str) -> dict[str, object]:
     config = INDICATORS[key]
@@ -152,7 +230,7 @@ def _load_evidence_context() -> dict[str, object]:
 
 
 def _build_agents() -> tuple[Agent, Agent, Agent, Agent, Agent, Agent]:
-    model = _model_name()
+    model = _build_model()
     macro_agent = Agent(
         name="Macro Analyst", model=model, output_type=SpecialistReport,
         instructions=(
@@ -298,8 +376,9 @@ def _validate_evidence_references(
 
 async def run_research(question: str) -> dict[str, object]:
     """Run four specialist agents concurrently, audit their output, then synthesize."""
-    if not os.getenv("OPENAI_API_KEY", "").strip():
-        raise RuntimeError("OPENAI_API_KEY is not configured.")
+    status = get_agent_status()
+    if not status["configured"]:
+        raise RuntimeError(str(status["note"]))
 
     context = await asyncio.to_thread(_load_evidence_context)
     macro_agent, market_agent, geopolitics_agent, cross_asset_agent, auditor_agent, lead_agent = _build_agents()
