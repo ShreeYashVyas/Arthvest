@@ -124,6 +124,8 @@ The OpenAI key is different from the Upstox API key/Analytics Token. It is only 
 
 This is descriptive decision support, not a calibrated forecast or personalized financial advice. Agents must not invent unavailable readings, stale observations remain marked, market quote gaps are disclosed, and no agent can place or modify trades. Each research run makes six model runs (four specialists in parallel, one evidence audit, and one lead synthesis).
 
+For a real-model integration check, configure the repository Actions secret `OPENAI_API_KEY` and run **Actions → Live AI agent smoke test → Run workflow**. This manually triggered check makes six model calls using synthetic fixture evidence (not live FRED or Upstox data), checks output contracts and evidence-key filtering, and may incur API charges. It is intentionally not part of routine CI.
+
 ## Archived historical analytics
 
 The optional archive can power a descriptive analytics endpoint such as `/api/macro/analytics/fed-funds?limit=12`. It reports the oldest/latest values in the returned window, absolute and relative change, direction, mean, min/max, and population standard deviation. The endpoint requires a reachable configured database and at least two archived display observations. For U.S. CPI inflation it derives year-over-year inflation from archived CPI index levels, matching the dashboard's units. These are descriptive statistics only—not a calibrated regime score or forecast. `limit` is between 2 and 60.
@@ -143,7 +145,7 @@ The optional archive can power a descriptive analytics endpoint such as `/api/ma
 | `GET /api/market/upstox/status` | Upstox token readiness without exposing credentials |
 | `GET /api/market/upstox/quotes` | Read-only NIFTY 50, NIFTY BANK and India VIX snapshot (requires `UPSTOX_ANALYTICS_TOKEN`) |
 | `GET /api/agents/status` | AI research-agent readiness without exposing credentials |
-| `POST /api/agents/research` | Run the three-stage evidence-grounded research workflow (requires `OPENAI_API_KEY`) |
+| `POST /api/agents/research` | Run the six-call, six-role evidence-grounded research workflow (requires `OPENAI_API_KEY`) |
 | `GET /api/macro/archive/{indicator_key}?limit=12` | Stored source-native observations (requires `DATABASE_URL`) |
 | `GET /api/macro/revisions/{indicator_key}?limit=20` | Detected upstream value revisions (requires `DATABASE_URL`) |
 | `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)
