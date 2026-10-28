@@ -106,25 +106,44 @@ Live fetching works without a database. To retain source observations, detect up
 
 Generate an Analytics Token in the [Upstox Developer Apps portal](https://account.upstox.com/developer/apps) and place it in `backend/.env` as `UPSTOX_ANALYTICS_TOKEN`. This is a read-only integration for market-data GET APIs; the token is never returned by Arthvest endpoints or shipped to the browser. The `/markets` page shows NIFTY 50, NIFTY BANK, and India VIX quotes from Upstox. An absent token is reported explicitly, and absent quotes are never replaced with sample values. See [Upstox Analytics Token documentation](https://upstox.com/developer/api-documentation/analytics-token/) and the [Full Market Quotes API](https://upstox.com/developer/api-documentation/get-full-market-quote/).
 
-## Optional AI research agents
+## AI research agents (local model by default)
 
-The AI Research Council is an optional, read-only research workflow powered by the OpenAI Agents SDK. It runs four specialists in parallel (Macro, India Market, Geopolitical Risk and Cross-Asset), asks a Risk & Evidence Auditor to critique their reports, then asks a Lead Research Analyst to synthesize the final brief. The context is collected server-side from the configured FRED-backed indicators and, when available, the existing read-only Upstox quote endpoint. The page shows the source observations separately from AI interpretation.
+The AI Research Council uses six roles: four specialists (Macro, India Market, Geopolitical Risk and Cross-Asset) run in parallel, then a Risk & Evidence Auditor critiques the evidence, and a Lead Research Analyst synthesizes the final brief.
 
-Configure these values in the untracked `backend/.env` file, then restart FastAPI:
+**Development defaults to local Ollama**, so AI inference does not require an OpenAI API key or generate hosted-model API charges. The recommended starting model is `qwen2.5:7b`. The model runs on your own machine; its speed and quality depend on available RAM/VRAM. The initial model download needs an internet connection and disk space. Macro data from FRED and optional Upstox quotes are still fetched from their external services, independently of where the AI runs.
 
-```dotenv
-OPENAI_API_KEY=your_openai_api_key
-ARTHVEST_AGENT_MODEL=gpt-4.1-mini
+### 1. Install and start Ollama (Windows)
+
+Install Ollama from its [official download page](https://ollama.com/download), then open a terminal in VS Code and download the model:
+
+```powershell
+ollama pull qwen2.5:7b
+ollama run qwen2.5:7b
 ```
 
-The OpenAI key is different from the Upstox API key/Analytics Token. It is only read by the backend; do not add it to `frontend/.env.local`, source control, or client-side code. AI runs require an OpenAI API account with API access and may incur usage charges. The default model can be changed through `ARTHVEST_AGENT_MODEL`.
+Keep Ollama running while using AI Research. Ollama's local OpenAI-compatible API normally listens at `http://localhost:11434/v1`.
+
+### 2. Configure Arthvest
+
+In `backend/.env`, set:
+
+```dotenv
+ARTHVEST_AGENT_PROVIDER=ollama
+ARTHVEST_AGENT_MODEL=qwen2.5:7b
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+No `OPENAI_API_KEY` is needed for local inference. Restart FastAPI after changing provider settings. If the model is already installed, research runs do not need to download it again.
+
+To opt into a hosted model later, explicitly switch to `ARTHVEST_AGENT_PROVIDER=openai`, set `ARTHVEST_AGENT_MODEL=gpt-4.1-mini`, and add `OPENAI_API_KEY` privately to `backend/.env`. Hosted API calls may cost money. Do not put API keys in frontend configuration or source control.
 
 - Agent status: `GET /api/agents/status`
-- Generate a research brief: `POST /api/agents/research` with JSON body `{"question":"Summarize current macro risks for India" }`
+- Generate a research brief: `POST /api/agents/research` with JSON body `{"question":"Summarize current macro risks for India"}`
+- Run the six-agent integration check locally: `cd backend`, activate the virtual environment, then run `python scripts/smoke_test_research_agents.py`. With Ollama selected, this uses the local model and synthetic fixture evidence; it does not query live FRED or Upstox sources.
 
-This is descriptive decision support, not a calibrated forecast or personalized financial advice. Agents must not invent unavailable readings, stale observations remain marked, market quote gaps are disclosed, and no agent can place or modify trades. Each research run makes six model runs (four specialists in parallel, one evidence audit, and one lead synthesis).
+**Deployment note:** `localhost` means the machine running the backend. If the backend is hosted remotely, it cannot automatically reach Ollama running on your personal computer; run the backend locally for the no-API-cost setup or configure an intentionally reachable model endpoint.
 
-For a real-model integration check, configure the repository Actions secret `OPENAI_API_KEY` and run **Actions → Live AI agent smoke test → Run workflow**. This manually triggered check makes six model calls using synthetic fixture evidence (not live FRED or Upstox data), checks output contracts and evidence-key filtering, and may incur API charges. It is intentionally not part of routine CI.
+This workflow is descriptive decision support, not a calibrated forecast or personalized financial advice. Stale data and source gaps must remain explicit, and agents cannot place or modify trades. Each research run uses six model runs (four specialists in parallel, one audit, one synthesis).
 
 ## Archived historical analytics
 
@@ -165,7 +184,7 @@ Indicator keys, formulas, sources and freshness thresholds are documented in [do
 
 ## Current limitations
 
-Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. The Upstox Market Pulse is optional and requires `UPSTOX_ANALYTICS_TOKEN`; it currently provides quote snapshots, not continuous WebSocket streaming or archived market candles. The AI Research Council is optional and requires `OPENAI_API_KEY`; each brief uses six model runs and may incur OpenAI API charges. A geopolitical event model and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
+Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. The Upstox Market Pulse is optional and requires `UPSTOX_ANALYTICS_TOKEN`; it currently provides quote snapshots, not continuous WebSocket streaming or archived market candles. The AI Research Council defaults to local Ollama inference with no hosted-model API charges; switching to the optional OpenAI provider may incur API charges. A geopolitical event model and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
 
 
 ## Cross-indicator historical comparison
