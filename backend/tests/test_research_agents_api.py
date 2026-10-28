@@ -19,13 +19,15 @@ client = TestClient(app)
 
 def test_agent_status_never_exposes_api_key(monkeypatch) -> None:
     key = "test-secret-openai-key"
+    monkeypatch.setenv("ARTHVEST_AGENT_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", key)
 
     response = client.get("/api/agents/status")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["provider"] == "OpenAI Agents SDK"
+    assert payload["provider"] == "OpenAI API"
+    assert payload["provider_id"] == "openai"
     assert payload["configured"] is True
     assert [agent["name"] for agent in payload["agents"]] == [
         "Macro Analyst",
@@ -56,7 +58,8 @@ def test_builder_defines_all_six_agent_roles_and_distinct_instructions() -> None
     assert "synthesize all five specialist reports" in agents[5].instructions.lower()
 
 
-def test_agent_status_reports_missing_key(monkeypatch) -> None:
+def test_openai_agent_status_reports_missing_key(monkeypatch) -> None:
+    monkeypatch.setenv("ARTHVEST_AGENT_PROVIDER", "openai")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     response = client.get("/api/agents/status")
@@ -66,7 +69,8 @@ def test_agent_status_reports_missing_key(monkeypatch) -> None:
     assert "OPENAI_API_KEY" in response.json()["note"]
 
 
-def test_research_requires_openai_key(monkeypatch) -> None:
+def test_research_requires_openai_key_when_openai_selected(monkeypatch) -> None:
+    monkeypatch.setenv("ARTHVEST_AGENT_PROVIDER", "openai")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     response = client.post(
