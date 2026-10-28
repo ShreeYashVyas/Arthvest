@@ -2,7 +2,7 @@
 
 Uses synthetic fixture evidence and makes real model calls. It does not query
 FRED or Upstox, and it never prints API credentials or raw model output.
-Run from backend/: python scripts/smoke_test_research_agents.py
+Run from backend/: python -m scripts.smoke_test_research_agents
 """
 
 import asyncio
