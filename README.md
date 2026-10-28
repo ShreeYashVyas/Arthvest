@@ -145,6 +145,8 @@ To opt into a hosted model later, explicitly switch to `ARTHVEST_AGENT_PROVIDER=
 
 This workflow is descriptive decision support, not a calibrated forecast or personalized financial advice. Stale data and source gaps must remain explicit, and agents cannot place or modify trades. Each research run uses six model runs (four specialists in parallel, one audit, one synthesis).
 
+The separate **Live AI agent smoke test** GitHub Actions workflow is explicitly configured to use hosted OpenAI because GitHub-hosted runners do not have your local Ollama server. It is optional and may incur API charges; local development and the local smoke test do not need that workflow or an OpenAI key.
+
 ## Archived historical analytics
 
 The optional archive can power a descriptive analytics endpoint such as `/api/macro/analytics/fed-funds?limit=12`. It reports the oldest/latest values in the returned window, absolute and relative change, direction, mean, min/max, and population standard deviation. The endpoint requires a reachable configured database and at least two archived display observations. For U.S. CPI inflation it derives year-over-year inflation from archived CPI index levels, matching the dashboard's units. These are descriptive statistics only—not a calibrated regime score or forecast. `limit` is between 2 and 60.
