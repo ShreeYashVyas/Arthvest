@@ -214,7 +214,9 @@ def test_research_runs_four_specialists_then_auditor_then_lead(monkeypatch) -> N
                     EvidenceFinding(
                         title="Source reading",
                         explanation="A mocked finding.",
-                        evidence_keys=["fed-funds"],
+                        evidence_keys=[
+                            "nifty-50" if agent.name == "India Market Analyst" else "fed-funds"
+                        ],
                     )
                 ],
                 watch_items=["Monitor the next source update."],
