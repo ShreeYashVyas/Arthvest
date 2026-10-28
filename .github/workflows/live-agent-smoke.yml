@@ -2,6 +2,9 @@ name: Live AI agent smoke test
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - test/live-six-agent-smoke
 
 permissions:
   contents: read
