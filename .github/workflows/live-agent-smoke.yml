@@ -1,4 +1,4 @@
-name: Local Ollama six-agent smoke test
+name: Local Ollama nine-agent smoke test
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   local-ollama-smoke:
-    name: Run six real agents on a local model
+    name: Run nine real agents on a local model
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -49,6 +49,6 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
         working-directory: backend
 
-      - name: Run six-agent local-model smoke test
+      - name: Run nine-agent local-model smoke test
         run: python -m scripts.smoke_test_research_agents
         working-directory: backend

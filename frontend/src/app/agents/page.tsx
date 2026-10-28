@@ -47,7 +47,7 @@ type ResearchResponse = {
   status: string; generated_at: string; question: string; model: string;
   agents: { name: string; status: string }[];
   brief: Brief;
-  specialist_reports: { macro: SpecialistReport; market: SpecialistReport; geopolitical_risk: SpecialistReport; cross_asset: SpecialistReport; risk_evidence_audit: SpecialistReport; };
+  specialist_reports: { macro: SpecialistReport; market: SpecialistReport; geopolitical_risk: SpecialistReport; cross_asset: SpecialistReport; scenario: SpecialistReport; sector_transmission: SpecialistReport; contrarian: SpecialistReport; risk_evidence_audit: SpecialistReport; };
   evidence_validation: { allowed_keys: string[]; invalid_reference_count: number };
   evidence: {
     generated_at: string;
@@ -155,15 +155,15 @@ export default function AgentsPage() {
           <div>
             <div className="mb-4 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.2em] text-accent">
               <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              Six-agent council. One evidence-led brief.
+              Nine-agent council. One evidence-led brief.
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.08] tracking-tight text-white sm:text-5xl">
               Research with a <span className="text-accent">second opinion.</span>
             </h1>
             <p className="mt-5 max-w-2xl text-sm leading-7 text-muted">
-              Four specialists review macro data, Indian market snapshots, geopolitical transmission channels,
-              and cross-asset context. A Risk &amp; Evidence Auditor challenges weak claims before the Lead
-              Research Analyst synthesizes the brief. Missing data stays missing—no fabricated quotes or automatic trading.
+              Seven specialists review macro data, Indian market snapshots, geopolitical transmission channels, cross-asset context,
+              conditional scenarios, Indian sector transmission mechanisms, and alternative interpretations. A Risk &amp; Evidence
+              Auditor challenges weak claims before the Lead Research Analyst synthesizes the brief. Missing data stays missing—no fabricated quotes or automatic trading.
             </p>
           </div>
           <div className="rounded-2xl border border-line bg-panel p-5">
@@ -212,7 +212,7 @@ export default function AgentsPage() {
               className="w-full resize-y rounded-xl border border-line bg-[#0b1017] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-muted focus:border-accent/60"
             />
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-[11px] text-muted">{question.length}/600 characters · Six model runs per brief</span>
+              <span className="text-[11px] text-muted">{question.length}/600 characters · Nine model runs per brief</span>
               <button type="submit" disabled={loading || !agentStatus?.configured || question.trim().length < 4}
                 className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[#10140b] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
                 {loading ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}
@@ -230,7 +230,7 @@ export default function AgentsPage() {
           {error && <div role="alert" className="mt-5 rounded-xl border border-red-400/25 bg-red-400/5 p-4 text-sm leading-6 text-red-200">{error}</div>}
         </section>
 
-        {loading && <div className="mt-6 flex items-center gap-3 rounded-2xl border border-line bg-panel p-5 text-sm text-muted"><LoaderCircle size={18} className="animate-spin text-accent" /> Collecting evidence, running four specialists in parallel, auditing their reports, and synthesizing the brief…</div>}
+        {loading && <div className="mt-6 flex items-center gap-3 rounded-2xl border border-line bg-panel p-5 text-sm text-muted"><LoaderCircle size={18} className="animate-spin text-accent" /> Collecting evidence, running seven specialists with local-resource concurrency limits, auditing their reports, and synthesizing the brief…</div>}
 
         {research && (
           <section className="mt-8 space-y-6">
@@ -244,7 +244,7 @@ export default function AgentsPage() {
             </div>
 
             <article className="rounded-2xl border border-line bg-panel p-5 sm:p-6">
-              <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted"><ShieldCheck size={14} className="text-accent" /> Six-agent execution status</div>
+              <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted"><ShieldCheck size={14} className="text-accent" /> Nine-agent execution status</div>
               <p className="text-xs leading-5 text-muted">Statuses from this research run. Source limitations are distinguished from a fully completed stage.</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {research.agents.map((agent) => {
@@ -294,6 +294,9 @@ export default function AgentsPage() {
                 { title: "India Market Analyst", report: research.specialist_reports.market, icon: TrendingUp },
                 { title: "Geopolitical Risk Analyst", report: research.specialist_reports.geopolitical_risk, icon: ShieldCheck },
                 { title: "Cross-Asset Analyst", report: research.specialist_reports.cross_asset, icon: Activity },
+                { title: "Scenario Analyst", report: research.specialist_reports.scenario, icon: Activity },
+                { title: "India Sector Transmission Analyst", report: research.specialist_reports.sector_transmission, icon: TrendingUp },
+                { title: "Contrarian Analyst", report: research.specialist_reports.contrarian, icon: ShieldCheck },
                 { title: "Risk & Evidence Auditor", report: research.specialist_reports.risk_evidence_audit, icon: ShieldCheck },
               ].map(({ title, report, icon: Icon }) => <article key={title} className="rounded-2xl border border-line bg-panel p-5">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

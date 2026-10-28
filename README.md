@@ -14,14 +14,14 @@ Arthvest is a research-first macroeconomic intelligence dashboard. It presents s
 - In-process 15-minute source-series cache; optional SQLAlchemy persistence for source observations, upstream revisions, and fetch successes/failures; descriptive analytics, relative comparison and scheduled archive ingestion.
 - GitHub Actions workflow for backend tests and frontend production build.
 - Optional Upstox-powered India Market Pulse page for read-only NIFTY 50, NIFTY BANK and India VIX quote snapshots; the token stays in the backend environment.
-- Optional OpenAI Agents SDK research council: a macro analyst and India market analyst produce evidence-bound specialist reports, then a lead analyst synthesizes a brief.
+- Nine-role evidence-grounded AI research council using local Ollama by default: seven specialists, a Risk & Evidence Auditor, and a Lead Research Analyst.
 
 ## Technology
 
 - **Frontend:** Next.js, React, TypeScript, Tailwind CSS, Lucide
 - **Backend:** Python, FastAPI, Pydantic
 - **Source data:** published FRED series with source-attribution links; optional Upstox Market Quote API for Indian indices
-- **AI research:** optional OpenAI Agents SDK with structured specialist reports and a lead research analyst
+- **AI research:** OpenAI Agents SDK over local Ollama by default; hosted OpenAI inference is opt-in
 - **Persistence:** optional SQLAlchemy archive for observations, revisions, and source checks
 - **Database:** PostgreSQL through `DATABASE_URL` when configured; live source feeds still run without persistence
 
@@ -108,7 +108,7 @@ Generate an Analytics Token in the [Upstox Developer Apps portal](https://accoun
 
 ## Optional AI research agents
 
-The six-role AI Research Council defaults to **local Ollama inference** for development, so it does not need an OpenAI API key or incur per-request OpenAI API charges. It runs four specialists in parallel (Macro, India Market, Geopolitical Risk and Cross-Asset), asks a Risk & Evidence Auditor to critique their reports, then asks a Lead Research Analyst to synthesize the final brief. Evidence is collected server-side from configured FRED-backed indicators and, when available, the read-only Upstox quote endpoint.
+The nine-role AI Research Council defaults to **local Ollama inference** for development, so it does not need an OpenAI API key or incur per-request OpenAI API charges. Seven specialists cover macro, India markets, geopolitical risk, cross-asset context, conditional scenarios, Indian sector transmission channels, and contrarian interpretations. A Risk & Evidence Auditor critiques all seven reports before the Lead Research Analyst synthesizes the final brief. Evidence is collected server-side from configured FRED-backed indicators and, when available, the read-only Upstox quote endpoint.
 
 ### Run the free local model
 
@@ -120,6 +120,7 @@ The six-role AI Research Council defaults to **local Ollama inference** for deve
    ARTHVEST_LLM_PROVIDER=ollama
    OLLAMA_BASE_URL=http://127.0.0.1:11434
    ARTHVEST_AGENT_MODEL=qwen3:4b
+   ARTHVEST_AGENT_MAX_CONCURRENCY=3
    ```
 
 4. Visit `GET /api/agents/status` or the Agents page. The status endpoint checks that Ollama is reachable and the selected model is installed.
@@ -133,7 +134,7 @@ To switch deliberately to cloud inference, set `ARTHVEST_LLM_PROVIDER=openai`, c
 - Agent status: `GET /api/agents/status`
 - Generate a research brief: `POST /api/agents/research` with JSON body `{"question":"Summarize current macro risks for India" }`
 
-This is descriptive decision support, not a calibrated forecast or personalized financial advice. Agents must not invent unavailable readings, stale observations remain marked, market quote gaps are disclosed, and no agent can place or modify trades. Each research run makes six model calls (four specialists in parallel, one evidence audit, and one lead synthesis).
+This is descriptive decision support, not a calibrated forecast or personalized financial advice. Agents must not invent unavailable readings, stale observations remain marked, market quote gaps are disclosed, and no agent can place or modify trades. Each research run makes nine model calls (seven specialists, one evidence audit, and one lead synthesis). Local inference runs at most three specialists simultaneously by default to reduce pressure on developer RAM/VRAM; override `ARTHVEST_AGENT_MAX_CONCURRENCY` when appropriate.
 
 ## Archived historical analytics
 
@@ -154,7 +155,7 @@ The optional archive can power a descriptive analytics endpoint such as `/api/ma
 | `GET /api/market/upstox/status` | Upstox token readiness without exposing credentials |
 | `GET /api/market/upstox/quotes` | Read-only NIFTY 50, NIFTY BANK and India VIX snapshot (requires `UPSTOX_ANALYTICS_TOKEN`) |
 | `GET /api/agents/status` | AI research-agent readiness without exposing credentials |
-| `POST /api/agents/research` | Run the six-call, six-role evidence-grounded research workflow (local Ollama by default) |
+| `POST /api/agents/research` | Run the nine-call, nine-role evidence-grounded research workflow (local Ollama by default) |
 | `GET /api/macro/archive/{indicator_key}?limit=12` | Stored source-native observations (requires `DATABASE_URL`) |
 | `GET /api/macro/revisions/{indicator_key}?limit=20` | Detected upstream value revisions (requires `DATABASE_URL`) |
 | `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)
@@ -174,7 +175,7 @@ Indicator keys, formulas, sources and freshness thresholds are documented in [do
 
 ## Current limitations
 
-Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. The Upstox Market Pulse is optional and requires `UPSTOX_ANALYTICS_TOKEN`; it currently provides quote snapshots, not continuous WebSocket streaming or archived market candles. The AI Research Council defaults to local Ollama inference and does not require an OpenAI API key. Set `ARTHVEST_LLM_PROVIDER=openai` to opt into cloud inference, which may incur API charges; each brief uses six model runs. A geopolitical event model and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
+Persistence is optional rather than automatic: archive, archived analytics, and comparisons require a reachable `DATABASE_URL`. The Upstox Market Pulse is optional and requires `UPSTOX_ANALYTICS_TOKEN`; it currently provides quote snapshots, not continuous WebSocket streaming or archived market candles. The AI Research Council defaults to local Ollama inference and does not require an OpenAI API key. It runs seven specialists plus an evidence audit and lead synthesis. Set `ARTHVEST_LLM_PROVIDER=openai` to opt into cloud inference, which may incur API charges; each brief uses nine model runs (seven specialists, one audit, one synthesis). A geopolitical event model and a calibrated full composite score are not implemented yet. Live indicators and upstream historical sparklines continue to work without the archive.
 
 
 ## Cross-indicator historical comparison

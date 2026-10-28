@@ -1,4 +1,4 @@
-"""On-demand smoke test for the real six-agent OpenAI workflow.
+"""On-demand smoke test for the real nine-agent local Ollama workflow.
 
 Uses synthetic fixture evidence and makes real model calls. It does not query
 FRED or Upstox, and it never prints API credentials or raw model output.
@@ -18,6 +18,9 @@ EXPECTED_ROLES = [
     "India Market Analyst",
     "Geopolitical Risk Analyst",
     "Cross-Asset Analyst",
+    "Scenario Analyst",
+    "India Sector Transmission Analyst",
+    "Contrarian Analyst",
     "Risk & Evidence Auditor",
     "Lead Research Analyst",
 ]
@@ -92,12 +95,12 @@ def main() -> None:
         fail(str(status.get("note", "The selected local model is not ready.")))
 
     question = (
-        "Smoke-test the six-agent research workflow using only the supplied "
+        "Smoke-test the nine-agent research workflow using only the supplied "
         "synthetic fixtures. Explicitly identify these as synthetic test values, "
         "do not describe them as live market conditions, and list relevant data gaps."
     )
 
-    # Patch only evidence collection: all six Agent/Runner model calls are real.
+    # Patch only evidence collection: all nine Agent/Runner model calls are real.
     with patch.object(
         research_agents, "_load_evidence_context", return_value=SYNTHETIC_EVIDENCE
     ):
@@ -132,6 +135,9 @@ def main() -> None:
         "market",
         "geopolitical_risk",
         "cross_asset",
+        "scenario",
+        "sector_transmission",
+        "contrarian",
         "risk_evidence_audit",
     }
     if not isinstance(reports, dict) or set(reports) != required_reports:
@@ -171,8 +177,8 @@ def main() -> None:
     # Do not print the brief or raw model output. Local mode has no cloud key.
     model_name = status["model"]
     invalid_refs = validation.get("invalid_reference_count", 0)
-    print(f"PASS: all six real local model stages completed using {model_name}.")
-    print("PASS: four specialist reports, audit report, and lead brief are present.")
+    print(f"PASS: all nine real local model stages completed using {model_name}.")
+    print("PASS: seven specialist reports, audit report, and lead brief are present.")
     print("PASS: output evidence keys are restricted to the synthetic fixtures.")
     print(f"INFO: unsupported evidence references removed by validation: {invalid_refs}")
     print("INFO: this run used synthetic evidence only; it did not test live FRED/Upstox connectivity.")
