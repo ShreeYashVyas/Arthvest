@@ -80,7 +80,12 @@ def test_evidence_validator_removes_unknown_and_unavailable_keys() -> None:
     macro_finding = EvidenceFinding(
         title="Macro observation",
         explanation="A source-based finding.",
-        evidence_keys=["fed-funds", "not-a-real-series", "india-gdp-growth"],
+        evidence_keys=["fed-funds", "nifty-50", "not-a-real-series", "india-gdp-growth"],
+    )
+    market_finding = EvidenceFinding(
+        title="Market observation",
+        explanation="A market report must cite market evidence only.",
+        evidence_keys=["fed-funds", "nifty-50"],
     )
     auditor_finding = EvidenceFinding(
         title="Audit note",
@@ -90,6 +95,13 @@ def test_evidence_validator_removes_unknown_and_unavailable_keys() -> None:
     macro_report = SpecialistReport(
         summary="Macro report",
         findings=[macro_finding],
+        watch_items=[],
+        data_gaps=[],
+        confidence="moderate",
+    )
+    market_report = SpecialistReport(
+        summary="Market report",
+        findings=[market_finding],
         watch_items=[],
         data_gaps=[],
         confidence="moderate",
@@ -127,17 +139,20 @@ def test_evidence_validator_removes_unknown_and_unavailable_keys() -> None:
     }
 
     result = _validate_evidence_references(
-        {"macro": macro_report, "risk_evidence_audit": audit_report},
+        {"macro": macro_report, "market": market_report, "risk_evidence_audit": audit_report},
         brief,
         context,
     )
 
     assert result["allowed_keys"] == ["fed-funds", "nifty-50"]
-    assert result["invalid_reference_count"] == 5
+    assert result["invalid_reference_count"] == 7
     assert macro_finding.evidence_keys == ["fed-funds"]
+    assert market_finding.evidence_keys == ["nifty-50"]
     assert auditor_finding.evidence_keys == ["nifty-50"]
     assert brief.key_findings[0].evidence_keys == ["fed-funds"]
     assert any("not-a-real-series" in item for item in macro_report.data_gaps)
+    assert any("nifty-50" in item for item in macro_report.data_gaps)
+    assert any("fed-funds" in item for item in market_report.data_gaps)
     assert any("fabricated-quote" in item for item in audit_report.data_gaps)
     assert any("unknown-key" in item for item in brief.limitations)
 
