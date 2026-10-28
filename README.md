@@ -122,7 +122,7 @@ The OpenAI key is different from the Upstox API key/Analytics Token. It is only 
 - Agent status: `GET /api/agents/status`
 - Generate a research brief: `POST /api/agents/research` with JSON body `{"question":"Summarize current macro risks for India" }`
 
-This is descriptive decision support, not a calibrated forecast or personalized financial advice. Agents must not invent unavailable readings, stale observations remain marked, market quote gaps are disclosed, and no agent can place or modify trades. Each research run makes six model runs (four specialists in parallel, one evidence audit, and one lead synthesis).
+This is descriptive decision support, not a calibrated forecast or personalized financial advice. Agents must not invent unavailable readings, stale observations remain marked, market quote gaps are disclosed, and no agent can place or modify trades. Each research run makes nine model runs (seven specialists in parallel, one evidence audit, and one lead synthesis).
 
 ## Archived historical analytics
 

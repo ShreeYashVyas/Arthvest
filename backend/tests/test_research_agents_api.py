@@ -31,6 +31,9 @@ def test_agent_status_never_exposes_api_key(monkeypatch) -> None:
         "India Market Analyst",
         "Geopolitical Risk Analyst",
         "Cross-Asset Analyst",
+        "Scenario Analyst",
+        "India Sector Transmission Analyst",
+        "Contrarian Analyst",
         "Risk & Evidence Auditor",
         "Lead Research Analyst",
     ]
@@ -158,7 +161,7 @@ def test_evidence_validator_removes_unknown_and_unavailable_keys() -> None:
 
 
 
-def test_research_runs_four_specialists_then_auditor_then_lead(monkeypatch) -> None:
+def test_research_runs_seven_specialists_then_auditor_then_lead(monkeypatch) -> None:
     from app.services import research_agents
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -180,6 +183,9 @@ def test_research_runs_four_specialists_then_auditor_then_lead(monkeypatch) -> N
         "India Market Analyst",
         "Geopolitical Risk Analyst",
         "Cross-Asset Analyst",
+        "Scenario Analyst",
+        "India Sector Transmission Analyst",
+        "Contrarian Analyst",
         "Risk & Evidence Auditor",
         "Lead Research Analyst",
     ]
@@ -238,5 +244,8 @@ def test_research_runs_four_specialists_then_auditor_then_lead(monkeypatch) -> N
         "market",
         "geopolitical_risk",
         "cross_asset",
+        "scenario",
+        "sector_transmission",
+        "contrarian",
         "risk_evidence_audit",
     }
