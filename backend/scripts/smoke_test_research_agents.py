@@ -1,8 +1,8 @@
-"""On-demand smoke test for the real six-agent OpenAI workflow.
+"""On-demand smoke test for the real six-agent workflow.
 
-Uses synthetic fixture evidence and makes real model calls. It does not query
-FRED or Upstox, and it never prints API credentials or raw model output.
-Run from backend/: python scripts/smoke_test_research_agents.py
+Uses synthetic fixture evidence and real model calls through the configured
+provider. It does not query FRED or Upstox, and never prints credentials or
+raw model output. Run from backend/: python scripts/smoke_test_research_agents.py
 """
 
 import asyncio
@@ -86,8 +86,12 @@ def fail(message: str) -> None:
 
 
 def main() -> None:
-    if not os.getenv("OPENAI_API_KEY", "").strip():
-        fail("OPENAI_API_KEY is not configured in the workflow secret.")
+    provider = research_agents._provider_name()
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if provider not in {"ollama", "openai"}:
+        fail("Set ARTHVEST_AGENT_PROVIDER to 'ollama' or 'openai'.")
+    if provider == "openai" and not api_key:
+        fail("OPENAI_API_KEY is required when ARTHVEST_AGENT_PROVIDER=openai.")
 
     question = (
         "Smoke-test the six-agent research workflow using only the supplied "
@@ -169,7 +173,6 @@ def main() -> None:
     # Do not print the brief or provider response. Verify the configured key
     # did not accidentally appear in the JSON payload.
     output_json = json.dumps(result, ensure_ascii=False)
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if api_key and api_key in output_json:
         fail("The API key unexpectedly appeared in the workflow response.")
 
