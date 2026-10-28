@@ -47,6 +47,7 @@ type ResearchResponse = {
   agents: { name: string; status: string }[];
   brief: Brief;
   specialist_reports: { macro: SpecialistReport; market: SpecialistReport; geopolitical_risk: SpecialistReport; cross_asset: SpecialistReport; risk_evidence_audit: SpecialistReport; };
+  evidence_validation: { allowed_keys: string[]; invalid_reference_count: number };
   evidence: {
     generated_at: string;
     macro_observations: MacroEvidence[];
@@ -153,15 +154,15 @@ export default function AgentsPage() {
           <div>
             <div className="mb-4 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.2em] text-accent">
               <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              Three roles. One evidence-led brief.
+              Six-agent council. One evidence-led brief.
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.08] tracking-tight text-white sm:text-5xl">
               Research with a <span className="text-accent">second opinion.</span>
             </h1>
             <p className="mt-5 max-w-2xl text-sm leading-7 text-muted">
-              A macro analyst studies published indicators, an India market analyst checks the available
-              Upstox snapshot, and a lead analyst challenges and synthesizes the findings. Missing data
-              stays missing—no fabricated quotes or automatic trading.
+              Four specialists review macro data, Indian market snapshots, geopolitical transmission channels,
+              and cross-asset context. A Risk &amp; Evidence Auditor challenges weak claims before the Lead
+              Research Analyst synthesizes the brief. Missing data stays missing—no fabricated quotes or automatic trading.
             </p>
           </div>
           <div className="rounded-2xl border border-line bg-panel p-5">
@@ -209,7 +210,7 @@ export default function AgentsPage() {
               className="w-full resize-y rounded-xl border border-line bg-[#0b1017] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-muted focus:border-accent/60"
             />
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-[11px] text-muted">{question.length}/600 characters · Three agent runs per brief</span>
+              <span className="text-[11px] text-muted">{question.length}/600 characters · Six model runs per brief</span>
               <button type="submit" disabled={loading || !agentStatus?.configured || question.trim().length < 4}
                 className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[#10140b] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
                 {loading ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}
@@ -227,7 +228,7 @@ export default function AgentsPage() {
           {error && <div role="alert" className="mt-5 rounded-xl border border-red-400/25 bg-red-400/5 p-4 text-sm leading-6 text-red-200">{error}</div>}
         </section>
 
-        {loading && <div className="mt-6 flex items-center gap-3 rounded-2xl border border-line bg-panel p-5 text-sm text-muted"><LoaderCircle size={18} className="animate-spin text-accent" /> Collecting evidence, running the two specialists in parallel, and asking the lead analyst to synthesize…</div>}
+        {loading && <div className="mt-6 flex items-center gap-3 rounded-2xl border border-line bg-panel p-5 text-sm text-muted"><LoaderCircle size={18} className="animate-spin text-accent" /> Collecting evidence, running four specialists in parallel, auditing their reports, and synthesizing the brief…</div>}
 
         {research && (
           <section className="mt-8 space-y-6">
@@ -260,6 +261,13 @@ export default function AgentsPage() {
               </article>
             </div>
 
+            {research.evidence_validation.invalid_reference_count > 0 && (
+              <div role="status" className="rounded-xl border border-amber-300/25 bg-amber-200/5 p-4 text-sm leading-6 text-amber-100">
+                Evidence validation removed {research.evidence_validation.invalid_reference_count} unsupported evidence reference(s).
+                Review the affected report caveats before relying on those findings.
+              </div>
+            )}
+
             <div className="grid gap-5 lg:grid-cols-2">
               {[
                 { title: "Macro Analyst", report: research.specialist_reports.macro, icon: Activity },
@@ -268,9 +276,20 @@ export default function AgentsPage() {
                 { title: "Cross-Asset Analyst", report: research.specialist_reports.cross_asset, icon: Activity },
                 { title: "Risk & Evidence Auditor", report: research.specialist_reports.risk_evidence_audit, icon: ShieldCheck },
               ].map(({ title, report, icon: Icon }) => <article key={title} className="rounded-2xl border border-line bg-panel p-5">
-                <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted"><Icon size={15} className="text-accent" /> {title}</div>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted"><Icon size={15} className="text-accent" /> {title}</div>
+                  <span className="rounded-full border border-line px-2 py-1 text-[10px] uppercase tracking-wide text-muted">{report.confidence} confidence</span>
+                </div>
                 <p className="text-sm leading-6 text-white/85">{report.summary}</p>
-                {report.findings.length > 0 && <div className="mt-4 space-y-3 border-t border-line pt-4">{report.findings.map((finding, index) => <div key={finding.title + "-" + index}><div className="text-xs font-semibold text-white">{finding.title}</div><p className="mt-1 text-xs leading-5 text-muted">{finding.explanation}</p></div>)}</div>}
+                {report.findings.length > 0 && <div className="mt-4 space-y-3 border-t border-line pt-4">{report.findings.map((finding, index) => <div key={finding.title + "-" + index}>
+                  <div className="text-xs font-semibold text-white">{finding.title}</div>
+                  <p className="mt-1 text-xs leading-5 text-muted">{finding.explanation}</p>
+                  {finding.evidence_keys.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{finding.evidence_keys.map((key) => <span key={key} className="rounded-md border border-line px-2 py-1 text-[10px] text-accent">{key}</span>)}</div>}
+                </div>)}</div>}
+                {report.watch_items.length > 0 && <div className="mt-4 border-t border-line pt-3">
+                  <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-muted">Watch items</div>
+                  <ul className="space-y-1.5">{report.watch_items.map((item, index) => <li key={item + "-" + index} className="text-xs leading-5 text-white/80">• {item}</li>)}</ul>
+                </div>}
                 {report.data_gaps.length > 0 && <div className="mt-4 border-t border-line pt-3 text-xs leading-5 text-amber-100/80">Data gaps: {report.data_gaps.join(" · ")}</div>}
               </article>)}
             </div>
