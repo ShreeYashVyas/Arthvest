@@ -223,8 +223,8 @@ def _validate_evidence_references(
     brief: ResearchBrief,
     context: dict[str, object],
 ) -> dict[str, object]:
-    """Remove evidence IDs that do not map to source data available in this run."""
-    allowed_keys: set[str] = set()
+    """Remove evidence IDs that are unavailable or outside a specialist's evidence domain."""
+    macro_keys: set[str] = set()
     macro_observations = context.get("macro_observations", [])
     if isinstance(macro_observations, list):
         for item in macro_observations:
@@ -233,8 +233,9 @@ def _validate_evidence_references(
                 and item.get("status") == "available"
                 and isinstance(item.get("key"), str)
             ):
-                allowed_keys.add(item["key"])
+                macro_keys.add(item["key"])
 
+    market_keys: set[str] = set()
     market_snapshot = context.get("market_snapshot", {})
     if isinstance(market_snapshot, dict):
         quotes = market_snapshot.get("quotes", [])
@@ -245,23 +246,27 @@ def _validate_evidence_references(
                     and quote.get("status") == "available"
                     and isinstance(quote.get("key"), str)
                 ):
-                    allowed_keys.add(quote["key"])
+                    market_keys.add(quote["key"])
 
+    all_available_keys = macro_keys | market_keys
     invalid_reference_count = 0
 
     def sanitize_findings(
         findings: list[EvidenceFinding],
+        permitted_keys: set[str],
         owner_report: SpecialistReport | None = None,
     ) -> None:
         nonlocal invalid_reference_count
         rejected_for_owner: set[str] = set()
         for finding in findings:
-            rejected = [key for key in finding.evidence_keys if key not in allowed_keys]
+            rejected = [
+                key for key in finding.evidence_keys if key not in permitted_keys
+            ]
             if rejected:
                 invalid_reference_count += len(rejected)
                 rejected_for_owner.update(rejected)
                 finding.evidence_keys = [
-                    key for key in finding.evidence_keys if key in allowed_keys
+                    key for key in finding.evidence_keys if key in permitted_keys
                 ]
         if rejected_for_owner:
             message = (
@@ -273,12 +278,20 @@ def _validate_evidence_references(
             else:
                 brief.limitations.append(message)
 
-    for report in reports.values():
-        sanitize_findings(report.findings, report)
-    sanitize_findings(brief.key_findings)
+    for report_name, report in reports.items():
+        if report_name == "macro":
+            permitted_keys = macro_keys
+        elif report_name == "market":
+            permitted_keys = market_keys
+        else:
+            # Geopolitical, cross-asset, auditor and lead roles may cite any
+            # available source category, but never unavailable or fabricated keys.
+            permitted_keys = all_available_keys
+        sanitize_findings(report.findings, permitted_keys, report)
+    sanitize_findings(brief.key_findings, all_available_keys)
 
     return {
-        "allowed_keys": sorted(allowed_keys),
+        "allowed_keys": sorted(all_available_keys),
         "invalid_reference_count": invalid_reference_count,
     }
 
