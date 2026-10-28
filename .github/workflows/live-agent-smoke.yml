@@ -2,9 +2,6 @@ name: Local Ollama six-agent smoke test
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feat/arthvest-local-ollama
 
 permissions:
   contents: read

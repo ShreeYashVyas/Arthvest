@@ -6,7 +6,6 @@ Run from backend/: python scripts/smoke_test_research_agents.py
 """
 
 import asyncio
-import json
 import os
 import sys
 from datetime import datetime, timezone

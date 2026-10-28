@@ -12,6 +12,7 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:
 
 type AgentStatus = {
   provider: string;
+  provider_key: string;
   configured: boolean;
   model: string;
   agents: { name: string; role: string }[];
