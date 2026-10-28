@@ -31,10 +31,11 @@ def get_research_agent_status() -> dict[str, object]:
 @router.post("/research", summary="Run the Arthvest multi-agent research workflow")
 async def create_research_brief(request: ResearchRequest) -> dict[str, object]:
     """Collect source context, run specialist agents, and synthesize a research brief."""
-    if not research_agents.get_agent_status()["configured"]:
+    status = research_agents.get_agent_status()
+    if not status["configured"]:
         raise HTTPException(
             status_code=503,
-            detail="AI agents are not configured. Add OPENAI_API_KEY to backend/.env and restart the backend.",
+            detail=str(status["note"]),
         )
 
     try:

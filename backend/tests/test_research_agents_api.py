@@ -19,13 +19,14 @@ client = TestClient(app)
 
 def test_agent_status_never_exposes_api_key(monkeypatch) -> None:
     key = "test-secret-openai-key"
+    monkeypatch.setenv("ARTHVEST_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", key)
 
     response = client.get("/api/agents/status")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["provider"] == "OpenAI Agents SDK"
+    assert payload["provider"] == "OpenAI API"
     assert payload["configured"] is True
     assert [agent["name"] for agent in payload["agents"]] == [
         "Macro Analyst",
@@ -38,16 +39,21 @@ def test_agent_status_never_exposes_api_key(monkeypatch) -> None:
     assert key not in response.text
 
 
-def test_builder_defines_all_six_agent_roles_and_distinct_instructions() -> None:
+def test_builder_defines_all_six_agent_roles_and_distinct_instructions(monkeypatch) -> None:
     """Exercise real Agent construction; orchestration tests must not mock this away."""
     from app.services import research_agents
 
+    from agents import OpenAIChatCompletionsModel
+
+    monkeypatch.setenv("ARTHVEST_LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("ARTHVEST_AGENT_MODEL", "qwen3:4b")
     agents = research_agents._build_agents()
     expected_names = [item["name"] for item in research_agents.AGENT_NAMES]
 
     assert [agent.name for agent in agents] == expected_names
     assert len(agents) == 6
     assert all(isinstance(agent.instructions, str) and agent.instructions.strip() for agent in agents)
+    assert all(isinstance(agent.model, OpenAIChatCompletionsModel) for agent in agents)
     assert "only supplied macro evidence" in agents[0].instructions.lower()
     assert "upstox snapshot" in agents[1].instructions.lower()
     assert "no live news source" in agents[2].instructions.lower()
@@ -56,7 +62,41 @@ def test_builder_defines_all_six_agent_roles_and_distinct_instructions() -> None
     assert "synthesize all five specialist reports" in agents[5].instructions.lower()
 
 
+def test_agent_status_reports_local_ollama_ready_without_api_key(monkeypatch) -> None:
+    from app.services import research_agents
+
+    monkeypatch.setenv("ARTHVEST_LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("ARTHVEST_AGENT_MODEL", "qwen3:4b")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(research_agents, "_ollama_model_status", lambda: (True, "Local Ollama model ready."))
+
+    response = client.get("/api/agents/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "Ollama (local)"
+    assert payload["provider_key"] == "ollama"
+    assert payload["configured"] is True
+    assert payload["model"] == "qwen3:4b"
+    assert "Local Ollama model ready" in payload["note"]
+    assert "OPENAI_API_KEY" not in response.text
+
+
+def test_agent_status_reports_ollama_unavailable(monkeypatch) -> None:
+    from app.services import research_agents
+
+    monkeypatch.setenv("ARTHVEST_LLM_PROVIDER", "ollama")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(research_agents, "_ollama_model_status", lambda: (False, "Ollama is not reachable."))
+
+    response = client.get("/api/agents/status")
+
+    assert response.status_code == 200
+    assert response.json()["configured"] is False
+    assert "Ollama is not reachable" in response.json()["note"]
+
 def test_agent_status_reports_missing_key(monkeypatch) -> None:
+    monkeypatch.setenv("ARTHVEST_LLM_PROVIDER", "openai")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     response = client.get("/api/agents/status")
@@ -67,6 +107,7 @@ def test_agent_status_reports_missing_key(monkeypatch) -> None:
 
 
 def test_research_requires_openai_key(monkeypatch) -> None:
+    monkeypatch.setenv("ARTHVEST_LLM_PROVIDER", "openai")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     response = client.post(
@@ -180,6 +221,7 @@ def test_evidence_validator_removes_unknown_and_unavailable_keys() -> None:
 def test_research_runs_four_specialists_then_auditor_then_lead(monkeypatch) -> None:
     from app.services import research_agents
 
+    monkeypatch.setenv("ARTHVEST_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     context = {
         "generated_at": "2026-10-28T00:00:00+00:00",
@@ -281,6 +323,7 @@ def test_research_runs_four_specialists_then_auditor_then_lead(monkeypatch) -> N
 def test_research_failure_returns_safe_gateway_error(monkeypatch) -> None:
     from app.services import research_agents
 
+    monkeypatch.setenv("ARTHVEST_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     async def failing_research(_question: str):

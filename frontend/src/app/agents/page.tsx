@@ -178,7 +178,7 @@ export default function AgentsPage() {
             ) : (
               <>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-white">OpenAI Agents SDK</span>
+                  <span className="text-sm text-white">{agentStatus.provider}</span>
                   <span className={agentStatus.configured ? "rounded-full border border-accent/30 px-2.5 py-1 text-[10px] uppercase tracking-wider text-accent" : "rounded-full border border-amber-300/30 px-2.5 py-1 text-[10px] uppercase tracking-wider text-amber-200"}>
                     {agentStatus.configured ? "Configured" : "Setup required"}
                   </span>
@@ -223,7 +223,7 @@ export default function AgentsPage() {
           {!agentStatus?.configured && !statusError && agentStatus && (
             <div className="mt-5 flex items-start gap-3 rounded-xl border border-amber-300/20 bg-amber-200/5 p-4 text-sm text-amber-100">
               <CircleAlert size={17} className="mt-0.5 shrink-0" />
-              <div><div className="font-medium">One-time setup needed</div><p className="mt-1 leading-6 text-amber-100/75">Add OPENAI_API_KEY to your private backend/.env file, then restart FastAPI. The key stays on the backend and is never sent to this page.</p></div>
+              <div><div className="font-medium">AI provider setup needed</div>{agentStatus.provider_key === "ollama" ? (<p className="mt-1 leading-6 text-amber-100/75">Install <a href="https://ollama.com/download/windows" target="_blank" rel="noreferrer" className="underline">Ollama for Windows</a>, start the Ollama app, then run <code>ollama pull qwen3:4b</code> in PowerShell. Keep ARTHVEST_LLM_PROVIDER=ollama and restart FastAPI.</p>) : (<p className="mt-1 leading-6 text-amber-100/75">To use paid cloud inference, set ARTHVEST_LLM_PROVIDER=openai and add OPENAI_API_KEY to the private backend/.env file. Never place the key in the frontend.</p>)}</div>
             </div>
           )}
           {error && <div role="alert" className="mt-5 rounded-xl border border-red-400/25 bg-red-400/5 p-4 text-sm leading-6 text-red-200">{error}</div>}
