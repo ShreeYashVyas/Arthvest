@@ -31,11 +31,19 @@ def get_research_agent_status() -> dict[str, object]:
 @router.post("/research", summary="Run the Arthvest multi-agent research workflow")
 async def create_research_brief(request: ResearchRequest) -> dict[str, object]:
     """Collect source context, run specialist agents, and synthesize a research brief."""
-    if not research_agents.get_agent_status()["configured"]:
-        raise HTTPException(
-            status_code=503,
-            detail="AI agents are not configured. Add OPENAI_API_KEY to backend/.env and restart the backend.",
-        )
+    status = research_agents.get_agent_status()
+    if not status["configured"]:
+        if status.get("provider_id") == "openai":
+            detail = (
+                "OpenAI provider is not configured. Add OPENAI_API_KEY to backend/.env "
+                "or switch ARTHVEST_AGENT_PROVIDER to ollama, then restart the backend."
+            )
+        else:
+            detail = (
+                "The selected AI provider is not configured. Check ARTHVEST_AGENT_PROVIDER "
+                "and its settings in backend/.env, then restart the backend."
+            )
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         return await research_agents.run_research(request.question.strip())
