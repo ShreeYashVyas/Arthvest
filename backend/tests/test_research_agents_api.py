@@ -1,6 +1,7 @@
 """Contract tests for the optional AI research-agent API."""
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -35,6 +36,24 @@ def test_agent_status_never_exposes_api_key(monkeypatch) -> None:
         "Lead Research Analyst",
     ]
     assert key not in response.text
+
+
+def test_builder_defines_all_six_agent_roles_and_distinct_instructions() -> None:
+    """Exercise real Agent construction; orchestration tests must not mock this away."""
+    from app.services import research_agents
+
+    agents = research_agents._build_agents()
+    expected_names = [item["name"] for item in research_agents.AGENT_NAMES]
+
+    assert [agent.name for agent in agents] == expected_names
+    assert len(agents) == 6
+    assert all(isinstance(agent.instructions, str) and agent.instructions.strip() for agent in agents)
+    assert "only supplied macro evidence" in agents[0].instructions.lower()
+    assert "upstox snapshot" in agents[1].instructions.lower()
+    assert "no live news source" in agents[2].instructions.lower()
+    assert "correlations" in agents[3].instructions.lower()
+    assert "audit" in agents[4].instructions.lower()
+    assert "synthesize all five specialist reports" in agents[5].instructions.lower()
 
 
 def test_agent_status_reports_missing_key(monkeypatch) -> None:
@@ -189,9 +208,11 @@ def test_research_runs_four_specialists_then_auditor_then_lead(monkeypatch) -> N
         lambda: tuple(SimpleNamespace(name=name) for name in roles),
     )
     call_order: list[str] = []
+    call_inputs: dict[str, str] = {}
 
     async def fake_run(agent, input_text, max_turns=2):
         call_order.append(agent.name)
+        call_inputs[agent.name] = input_text
         if agent.name == "Lead Research Analyst":
             output = ResearchBrief(
                 headline="Test brief",
@@ -240,3 +261,39 @@ def test_research_runs_four_specialists_then_auditor_then_lead(monkeypatch) -> N
         "cross_asset",
         "risk_evidence_audit",
     }
+
+    # Verify the auditor receives every specialist report and the lead receives the audit.
+    audit_payload = json.loads(call_inputs["Risk & Evidence Auditor"])
+    assert audit_payload["question"] == "Review macro and market risk"
+    assert {
+        "macro_report", "market_report", "geopolitical_report", "cross_asset_report"
+    }.issubset(audit_payload)
+    assert audit_payload["macro_report"]["summary"] == "Macro Analyst completed."
+    assert audit_payload["cross_asset_report"]["summary"] == "Cross-Asset Analyst completed."
+
+    lead_payload = json.loads(call_inputs["Lead Research Analyst"])
+    assert set(lead_payload["specialist_reports"]) == {
+        "macro", "market", "geopolitical_risk", "cross_asset", "risk_evidence_audit"
+    }
+    assert lead_payload["specialist_reports"]["risk_evidence_audit"]["summary"] == "Risk & Evidence Auditor completed."
+
+
+def test_research_failure_returns_safe_gateway_error(monkeypatch) -> None:
+    from app.services import research_agents
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    async def failing_research(_question: str):
+        raise RuntimeError("provider detail that must not reach the client")
+
+    monkeypatch.setattr(research_agents, "run_research", failing_research)
+    response = client.post(
+        "/api/agents/research",
+        json={"question": "Check the six-agent workflow"},
+    )
+
+    assert response.status_code == 502
+    assert "provider detail" not in response.text
+    assert response.json()["detail"] == (
+        "The AI research workflow could not complete. Check the backend log and API configuration."
+    )

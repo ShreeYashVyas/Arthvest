@@ -186,9 +186,10 @@ export default function AgentsPage() {
                 <div className="mt-2 text-xs text-muted">Model: {agentStatus.model}</div>
                 <p className="mt-3 text-xs leading-5 text-muted">{agentStatus.note}</p>
                 <div className="mt-4 space-y-3 border-t border-line pt-4">
+                  <p className="text-[11px] leading-5 text-muted">Registered roles, not a live health check. Per-run completion appears below after the council executes.</p>
                   {agentStatus.agents.map((agent) => (
                     <div key={agent.name} className="flex items-start gap-2.5">
-                      <div className="mt-0.5 text-accent"><CheckCircle2 size={14} /></div>
+                      <div className="mt-0.5 text-accent"><Sparkles size={14} /></div>
                       <div><div className="text-xs font-medium text-white">{agent.name}</div><div className="mt-1 text-[11px] leading-5 text-muted">{agent.role}</div></div>
                     </div>
                   ))}
@@ -240,6 +241,24 @@ export default function AgentsPage() {
               </div>
               <span className="rounded-full border border-line px-3 py-2 text-[10px] uppercase tracking-wider text-muted">{research.brief.confidence.toUpperCase()} CONFIDENCE</span>
             </div>
+
+            <article className="rounded-2xl border border-line bg-panel p-5 sm:p-6">
+              <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted"><ShieldCheck size={14} className="text-accent" /> Six-agent execution status</div>
+              <p className="text-xs leading-5 text-muted">Statuses from this research run. Source limitations are distinguished from a fully completed stage.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {research.agents.map((agent) => {
+                  const limited = agent.status !== "completed";
+                  return (
+                    <div key={agent.name} className="rounded-xl border border-line bg-[#0b1017] p-3">
+                      <div className="text-xs font-medium text-white">{agent.name}</div>
+                      <div className={limited ? "mt-2 text-[10px] uppercase tracking-wide text-amber-200" : "mt-2 text-[10px] uppercase tracking-wide text-accent"}>
+                        {agent.status.replaceAll("_", " ")}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
 
             <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
               <article className="rounded-2xl border border-accent/20 bg-panel p-5 sm:p-7">
