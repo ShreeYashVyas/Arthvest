@@ -22,7 +22,7 @@ This document describes the current Phase 1 data inputs. Source readings are obs
 
 ## AI research council
 
-The optional AI Research Council is implemented with the OpenAI Agents SDK. It runs four typed specialist reports—the Macro Analyst, India Market Analyst, Geopolitical Risk Analyst and Cross-Asset Analyst—in parallel. A Risk & Evidence Auditor then critiques those reports and the evidence, and a Lead Research Analyst synthesizes the final brief. The API returns the lead brief, the five specialist and audit reports, and the source evidence used for that run so users can distinguish observations from interpretation.
+The optional AI Research Council is implemented with the OpenAI Agents SDK. It runs four typed specialist reports—the Macro Analyst, India Market Analyst, Geopolitical Risk Analyst and Cross-Asset Analyst—in parallel. A Risk & Evidence Auditor then critiques those reports and the evidence, and a Lead Research Analyst synthesizes the final brief. The API returns the lead brief, the four specialist reports, the audit report, and the source evidence used for that run so users can distinguish observations from interpretation.
 
 The server gathers the eight indicators listed below through the existing macro service, preserving observation date, retrieval time, freshness, units, source labels, and source URLs. It also asks the existing Upstox service for its read-only index snapshot. If Upstox is missing or unavailable, the market specialist is instructed to report the gap, not to invent quote values. If an indicator cannot be validated, it remains unavailable in the evidence payload. The user question is length-bounded and the model has no tools that can submit trades or alter data.
 
