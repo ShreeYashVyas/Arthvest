@@ -10,13 +10,38 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --env-file .env
 ```
 
 Use these endpoints:
 - `GET /` — service information
 - `GET /health` — health status
 - `GET /docs` — interactive API documentation
+
+## Free local AI model (recommended for development)
+
+Arthvest defaults to Ollama on your own computer. The six research stages use the local qwen3:4b model by default; no OpenAI API key is required and inference requests stay on the machine running the backend. Downloading the model requires internet once, and inference uses local RAM/GPU.
+
+1. Install [Ollama for Windows](https://ollama.com/download/windows) and start the Ollama app.
+2. In PowerShell, download the model:
+
+   ```powershell
+   ollama pull qwen3:4b
+   ollama list
+   ```
+
+3. Copy .env.example to .env if needed, then set:
+
+   ```dotenv
+   ARTHVEST_LLM_PROVIDER=ollama
+   OLLAMA_BASE_URL=http://127.0.0.1:11434
+   ARTHVEST_AGENT_MODEL=qwen3:4b
+   ```
+
+4. Restart the backend and open GET /api/agents/status. It should report configured: true only when Ollama is reachable and the model is installed. Then open the frontend Agents page and run a research request.
+
+Use ARTHVEST_LLM_PROVIDER=openai and configure OPENAI_API_KEY only when you deliberately want paid cloud inference. Local mode disables OpenAI tracing and does not require that key. Macro and market data collection can still use the internet; only model inference is local.
+
 
 Install development tooling and run tests/lint checks:
 

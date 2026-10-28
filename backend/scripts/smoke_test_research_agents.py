@@ -2,11 +2,10 @@
 
 Uses synthetic fixture evidence and makes real model calls. It does not query
 FRED or Upstox, and it never prints API credentials or raw model output.
-Run from backend/: python scripts/smoke_test_research_agents.py
+Run from backend/: python -m scripts.smoke_test_research_agents
 """
 
 import asyncio
-import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -86,8 +85,11 @@ def fail(message: str) -> None:
 
 
 def main() -> None:
-    if not os.getenv("OPENAI_API_KEY", "").strip():
-        fail("OPENAI_API_KEY is not configured in the workflow secret.")
+    if os.getenv("ARTHVEST_LLM_PROVIDER", "ollama").strip().lower() != "ollama":
+        fail("This smoke test is intended for local Ollama mode. Set ARTHVEST_LLM_PROVIDER=ollama.")
+    status = research_agents.get_agent_status()
+    if not status.get("configured"):
+        fail(str(status.get("note", "The selected local model is not ready.")))
 
     question = (
         "Smoke-test the six-agent research workflow using only the supplied "
@@ -166,19 +168,15 @@ def main() -> None:
         if not isinstance(keys, list) or not set(keys).issubset(allowed):
             fail("An output finding contains evidence keys outside the allowlist.")
 
-    # Do not print the brief or provider response. Verify the configured key
-    # did not accidentally appear in the JSON payload.
-    output_json = json.dumps(result, ensure_ascii=False)
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if api_key and api_key in output_json:
-        fail("The API key unexpectedly appeared in the workflow response.")
-
+    # Do not print the brief or raw model output. Local mode has no cloud key.
+    model_name = status["model"]
     invalid_refs = validation.get("invalid_reference_count", 0)
-    print("PASS: all six real model stages completed and returned expected output.")
+    print(f"PASS: all six real local model stages completed using {model_name}.")
     print("PASS: four specialist reports, audit report, and lead brief are present.")
     print("PASS: output evidence keys are restricted to the synthetic fixtures.")
     print(f"INFO: unsupported evidence references removed by validation: {invalid_refs}")
     print("INFO: this run used synthetic evidence only; it did not test live FRED/Upstox connectivity.")
+    print("INFO: inference used the local Ollama endpoint; no OpenAI API key was required.")
     print("Agent statuses:")
     for row in agent_rows:
         print(f"  - {row['name']}: {row['status']}")
