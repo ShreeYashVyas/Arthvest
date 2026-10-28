@@ -1,0 +1,41 @@
+name: Live AI agent smoke test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-agent-smoke:
+    name: Run six real AI agent stages
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ARTHVEST_AGENT_MODEL: ${{ vars.ARTHVEST_AGENT_MODEL || 'gpt-4.1-mini' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Require API secret
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Add OPENAI_API_KEY under GitHub repository Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements-dev.txt
+        working-directory: backend
+
+      - name: Run live-model smoke test with synthetic evidence
+        run: python scripts/smoke_test_research_agents.py
+        working-directory: backend
