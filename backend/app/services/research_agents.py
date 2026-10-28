@@ -8,7 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Literal
 
-from agents import Agent, Runner
+from agents import Agent, OpenAIChatCompletionsModel, Runner, set_tracing_disabled
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from app.services import upstox_service
@@ -56,25 +57,85 @@ AGENT_NAMES = [
 ]
 
 
-def get_agent_status() -> dict[str, object]:
-    """Expose safe configuration status without revealing credentials."""
-    configured = bool(os.getenv("OPENAI_API_KEY", "").strip())
-    return {
-        "provider": "OpenAI Agents SDK",
-        "configured": configured,
-        "model": os.getenv("ARTHVEST_AGENT_MODEL", "gpt-4.1-mini"),
-        "agents": AGENT_NAMES,
-        "workflow": "six-role council",
-        "note": (
-            "Configure OPENAI_API_KEY in backend/.env to run research."
-            if not configured
-            else "Six-role council configured. Geopolitical analysis is limited by the supplied evidence; no dedicated live-news feed is connected."
-        ),
-    }
+def _provider_name() -> str:
+    """Select the AI backend. Local Ollama is the safe, zero-API-billing default."""
+    return os.getenv("ARTHVEST_AGENT_PROVIDER", "ollama").strip().lower() or "ollama"
 
 
 def _model_name() -> str:
-    return os.getenv("ARTHVEST_AGENT_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+    """Return the configured model, with a provider-appropriate free/local default."""
+    default_model = "gpt-4.1-mini" if _provider_name() == "openai" else "qwen2.5:7b"
+    return os.getenv("ARTHVEST_AGENT_MODEL", default_model).strip() or default_model
+
+
+def _ollama_base_url() -> str:
+    return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").strip().rstrip("/")
+
+
+def _build_model() -> object:
+    """Build a model through Ollama's local OpenAI-compatible API or OpenAI's API."""
+    provider = _provider_name()
+    if provider == "ollama":
+        base_url = _ollama_base_url()
+        if not base_url:
+            raise RuntimeError("OLLAMA_BASE_URL is not configured.")
+        # Disable cloud tracing for local inference: traces are not needed to run agents
+        # and should not be sent to OpenAI when using a local-only setup.
+        set_tracing_disabled(True)
+        client = AsyncOpenAI(
+            base_url=base_url,
+            api_key="ollama",  # Ollama accepts any non-empty API key for local requests.
+            timeout=180.0,
+            max_retries=1,
+        )
+        return OpenAIChatCompletionsModel(model=_model_name(), openai_client=client)
+
+    if provider == "openai":
+        if not os.getenv("OPENAI_API_KEY", "").strip():
+            raise RuntimeError(
+                "OPENAI_API_KEY is not configured for ARTHVEST_AGENT_PROVIDER=openai."
+            )
+        return _model_name()
+
+    raise RuntimeError(
+        "Unsupported ARTHVEST_AGENT_PROVIDER. Use 'ollama' or 'openai'."
+    )
+
+
+def get_agent_status() -> dict[str, object]:
+    """Expose safe provider status without revealing credentials or secrets."""
+    provider = _provider_name()
+    if provider == "ollama":
+        configured = bool(_ollama_base_url())
+        provider_label = "Ollama (local)"
+        note = (
+            "Local Ollama selected. Start Ollama and pull the configured model; "
+            "server/model reachability is confirmed only when a research run is attempted."
+            if configured
+            else "OLLAMA_BASE_URL is empty; configure the local Ollama endpoint."
+        )
+    elif provider == "openai":
+        configured = bool(os.getenv("OPENAI_API_KEY", "").strip())
+        provider_label = "OpenAI API"
+        note = (
+            "OpenAI provider configured; usage may incur API charges."
+            if configured
+            else "Add OPENAI_API_KEY to backend/.env or switch to ARTHVEST_AGENT_PROVIDER=ollama."
+        )
+    else:
+        configured = False
+        provider_label = f"Unsupported provider: {provider}"
+        note = "Set ARTHVEST_AGENT_PROVIDER to 'ollama' or 'openai'."
+
+    return {
+        "provider": provider_label,
+        "provider_id": provider,
+        "configured": configured,
+        "model": _model_name(),
+        "agents": AGENT_NAMES,
+        "workflow": "six-role council",
+        "note": note,
+    }
 
 
 def _load_one_indicator(key: str) -> dict[str, object]:
@@ -152,7 +213,7 @@ def _load_evidence_context() -> dict[str, object]:
 
 
 def _build_agents() -> tuple[Agent, Agent, Agent, Agent, Agent, Agent]:
-    model = _model_name()
+    model = _build_model()
     macro_agent = Agent(
         name="Macro Analyst", model=model, output_type=SpecialistReport,
         instructions=(
@@ -298,8 +359,15 @@ def _validate_evidence_references(
 
 async def run_research(question: str) -> dict[str, object]:
     """Run four specialist agents concurrently, audit their output, then synthesize."""
-    if not os.getenv("OPENAI_API_KEY", "").strip():
-        raise RuntimeError("OPENAI_API_KEY is not configured.")
+    provider = _provider_name()
+    if provider not in {"ollama", "openai"}:
+        raise RuntimeError(
+            "Unsupported ARTHVEST_AGENT_PROVIDER. Use 'ollama' or 'openai'."
+        )
+    if provider == "openai" and not os.getenv("OPENAI_API_KEY", "").strip():
+        raise RuntimeError(
+            "OPENAI_API_KEY is not configured for ARTHVEST_AGENT_PROVIDER=openai."
+        )
 
     context = await asyncio.to_thread(_load_evidence_context)
     macro_agent, market_agent, geopolitics_agent, cross_asset_agent, auditor_agent, lead_agent = _build_agents()
