@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   ArrowDownRight,
@@ -15,165 +15,122 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
+import {
+  fetchMarketProviderStatus,
+  fetchMarketQuotes,
+  type MarketProviderStatus,
+  type MarketQuote,
+  type MarketQuotesResponse,
+} from "@/lib/api";
+import StockDiscovery from "./StockDiscovery";
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+const INSTRUMENTS = [
+  { key: "nifty-50", name: "NIFTY 50", instrumentId: "NSE_INDEX|Nifty 50" },
+  { key: "nifty-bank", name: "NIFTY BANK", instrumentId: "NSE_INDEX|Nifty Bank" },
+  { key: "india-vix", name: "INDIA VIX", instrumentId: "NSE_INDEX|India VIX" },
+] as const;
 
-type UpstoxStatus = {
-  provider: string;
-  configured: boolean;
-  auth_mode: string | null;
-  note: string;
-};
-
-type MarketQuote = {
-  key: string;
-  name: string;
-  instrument_key: string;
-  status: "available" | "unavailable";
-  last_price: number | null;
-  previous_close: number | null;
-  change: number | null;
-  change_percent: number | null;
-  open: number | null;
-  high: number | null;
-  low: number | null;
-  volume: number | null;
-  timestamp: string | null;
-};
-
-type MarketSnapshot = {
-  provider: string;
-  source_url: string;
-  generated_at: string;
-  data_as_of: string | null;
-  available_count: number;
-  total_count: number;
-  quotes: MarketQuote[];
-  read_only: boolean;
-  limitations: string[];
-};
-
-const emptyQuotes: MarketQuote[] = [
-  { key: "nifty-50", name: "NIFTY 50", instrument_key: "NSE_INDEX|Nifty 50", status: "unavailable", last_price: null, previous_close: null, change: null, change_percent: null, open: null, high: null, low: null, volume: null, timestamp: null },
-  { key: "nifty-bank", name: "NIFTY BANK", instrument_key: "NSE_INDEX|Nifty Bank", status: "unavailable", last_price: null, previous_close: null, change: null, change_percent: null, open: null, high: null, low: null, volume: null, timestamp: null },
-  { key: "india-vix", name: "INDIA VIX", instrument_key: "NSE_INDEX|India VIX", status: "unavailable", last_price: null, previous_close: null, change: null, change_percent: null, open: null, high: null, low: null, volume: null, timestamp: null },
-];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function parseStatus(value: unknown): UpstoxStatus {
-  if (
-    !isRecord(value) ||
-    value.provider !== "Upstox" ||
-    typeof value.configured !== "boolean" ||
-    !(value.auth_mode === null || typeof value.auth_mode === "string") ||
-    typeof value.note !== "string"
-  ) {
-    throw new Error("Upstox status returned an unexpected response format.");
-  }
-  return value as UpstoxStatus;
-}
-
-function parseSnapshot(value: unknown): MarketSnapshot {
-  if (
-    !isRecord(value) ||
-    value.provider !== "Upstox" ||
-    typeof value.source_url !== "string" ||
-    typeof value.generated_at !== "string" ||
-    !(value.data_as_of === null || typeof value.data_as_of === "string") ||
-    typeof value.available_count !== "number" ||
-    typeof value.total_count !== "number" ||
-    !Array.isArray(value.quotes) ||
-    value.read_only !== true ||
-    !Array.isArray(value.limitations)
-  ) {
-    throw new Error("Market quote API returned an unexpected response format.");
-  }
-  return value as MarketSnapshot;
-}
-
-async function readJson(response: Response): Promise<unknown> {
-  return response.json().catch(() => null);
-}
-
-function messageFrom(payload: unknown, fallback: string): string {
-  if (isRecord(payload) && typeof payload.detail === "string") return payload.detail;
-  return fallback;
-}
-
-function formatPrice(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function formatSigned(value: number | null, suffix = ""): string {
-  if (value === null || !Number.isFinite(value)) return "—";
-  const sign = value > 0 ? "+" : "";
-  return sign + formatPrice(value) + suffix;
-}
+const configuredRefreshSeconds = Number(process.env.NEXT_PUBLIC_MARKET_REFRESH_SECONDS);
+const refreshSeconds = Number.isFinite(configuredRefreshSeconds) && configuredRefreshSeconds > 0
+  ? Math.min(300, Math.max(30, Math.trunc(configuredRefreshSeconds)))
+  : 60;
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) return "Not supplied by provider";
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("en-IN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  if (Number.isNaN(parsed.getTime())) return "Timestamp unavailable";
+  return parsed.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatAge(value: string): string {
+  const parsed = new Date(value).getTime();
+  if (!Number.isFinite(parsed)) return "age unknown";
+  const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m ago`;
+}
+
+function formatPrice(value: number | null, currency: string | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  const options: Intl.NumberFormatOptions = {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  };
+  if (currency) {
+    options.style = "currency";
+    options.currency = currency;
+    options.currencyDisplay = "narrowSymbol";
+  }
+  return new Intl.NumberFormat("en-IN", options).format(value);
+}
+
+function formatSigned(value: number | null, currency: string | null, suffix = ""): string {
+  if (value === null || !Number.isFinite(value)) return "Not supplied";
+  const sign = value > 0 ? "+" : "";
+  return sign + formatPrice(value, currency) + suffix;
+}
+
+function freshnessLabel(quote: MarketQuote): string {
+  if (quote.status === "unavailable") return "Unavailable";
+  switch (quote.freshness) {
+    case "fresh": return "Fresh provider timestamp";
+    case "delayed": return "Delayed · not real-time";
+    case "stale": return "Stale provider timestamp";
+    default: return "Provider timestamp unknown";
+  }
+}
+
+function quoteClass(quote: MarketQuote): string {
+  if (quote.status === "unavailable" || quote.freshness === "stale") return "text-amber-200";
+  if (quote.freshness === "fresh") return "text-accent";
+  return "text-muted";
 }
 
 export default function MarketsPage() {
-  const [status, setStatus] = useState<UpstoxStatus | null>(null);
-  const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [providerStatus, setProviderStatus] = useState<MarketProviderStatus | null>(null);
+  const [snapshot, setSnapshot] = useState<MarketQuotesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const requestInFlight = useRef<Promise<void> | null>(null);
 
-  const loadMarketData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const statusResponse = await fetch(API_BASE_URL + "/api/market/upstox/status", {
-        cache: "no-store",
-      });
-      const statusPayload = await readJson(statusResponse);
-      if (!statusResponse.ok) {
-        throw new Error(messageFrom(statusPayload, "Unable to check Upstox configuration."));
-      }
-      const nextStatus = parseStatus(statusPayload);
-      setStatus(nextStatus);
+  const refreshMarketData = useCallback((): Promise<void> => {
+    if (requestInFlight.current) return requestInFlight.current;
 
-      if (!nextStatus.configured) {
-        setSnapshot(null);
-        return;
+    setRefreshing(true);
+    const request = (async () => {
+      try {
+        const status = await fetchMarketProviderStatus();
+        setProviderStatus(status);
+        const quotes = await fetchMarketQuotes(INSTRUMENTS.map((item) => item.key));
+        setSnapshot(quotes);
+        setError(null);
+      } catch (caught: unknown) {
+        setError(caught instanceof Error ? caught.message : "Market data could not be refreshed.");
+      } finally {
+        setInitialLoading(false);
+        setRefreshing(false);
       }
-
-      const quotesResponse = await fetch(API_BASE_URL + "/api/market/upstox/quotes", {
-        cache: "no-store",
-      });
-      const quotesPayload = await readJson(quotesResponse);
-      if (!quotesResponse.ok) {
-        throw new Error(messageFrom(quotesPayload, "Unable to retrieve market quotes."));
-      }
-      setSnapshot(parseSnapshot(quotesPayload));
-    } catch (caught: unknown) {
-      setSnapshot(null);
-      setError(caught instanceof Error ? caught.message : "Market data could not be loaded.");
-    } finally {
-      setLoading(false);
-    }
+    })();
+    requestInFlight.current = request;
+    void request.then(() => {
+      if (requestInFlight.current === request) requestInFlight.current = null;
+    });
+    return request;
   }, []);
 
   useEffect(() => {
-    void loadMarketData();
-  }, [loadMarketData]);
+    void refreshMarketData();
+    const timer = window.setInterval(() => void refreshMarketData(), refreshSeconds * 1000);
+    return () => window.clearInterval(timer);
+  }, [refreshMarketData]);
 
-  const quotes = snapshot?.quotes ?? emptyQuotes;
-  const hasLiveQuotes = Boolean(snapshot && snapshot.available_count > 0);
+  const quotesByKey = new Map((snapshot?.quotes ?? []).map((quote) => [quote.key, quote]));
+  const hasAnyQuote = (snapshot?.available_count ?? 0) > 0;
+  const snapshotAvailable = hasAnyQuote;
 
   return (
     <main className="min-h-screen px-4 pb-10 pt-5 sm:px-7 lg:px-10">
@@ -192,13 +149,12 @@ export default function MarketsPage() {
             <Link href="/" className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 transition hover:border-accent/50 hover:text-accent">
               <ArrowLeft size={13} /> Macro terminal
             </Link>
-            <Link href="/agents" className="rounded-lg border border-line px-3 py-2 transition hover:border-accent/50 hover:text-accent">AI RESEARCH ↗</Link>
             <span className="hidden sm:inline">PHASE 02 / MARKET PULSE</span>
             <span className="h-4 w-px bg-line" />
             <span className="flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-2">
-              {hasLiveQuotes ? <Wifi size={13} className="text-accent" /> : <WifiOff size={13} className="text-amber-300" />}
-              <span className={hasLiveQuotes ? "text-accent" : "text-amber-300"}>
-                {loading ? "CHECKING" : hasLiveQuotes ? "DATA CONNECTED" : status?.configured ? "TOKEN READY" : "TOKEN REQUIRED"}
+              {snapshotAvailable ? <Wifi size={13} className="text-accent" /> : <WifiOff size={13} className="text-amber-300" />}
+              <span className={snapshotAvailable ? "text-accent" : "text-amber-300"}>
+                {initialLoading ? "FETCHING SNAPSHOT" : snapshotAvailable ? "SNAPSHOT AVAILABLE" : "DATA UNAVAILABLE"}
               </span>
             </span>
           </div>
@@ -207,104 +163,107 @@ export default function MarketsPage() {
         <section className="grid gap-8 py-9 lg:grid-cols-[1.3fr_0.7fr] lg:items-end lg:py-12">
           <div>
             <div className="mb-4 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.2em] text-accent">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              India · Market data snapshot
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" /> India · Market data snapshot
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
               See the <span className="text-accent">market pulse.</span>
               <br />Keep the signal honest.
             </h1>
             <p className="mt-5 max-w-2xl text-sm leading-7 text-muted sm:text-base">
-              A read-only market snapshot for NIFTY 50, NIFTY BANK and India VIX, designed to sit beside Arthvest&apos;s macro indicators. Every displayed value comes from the provider response; unavailable data stays unavailable.
+              NIFTY 50, NIFTY BANK and India VIX snapshots come from the selected backend provider. If a quote or its timestamp is missing, it remains missing.
             </p>
           </div>
 
           <div className="rounded-2xl border border-line bg-panel/80 p-5 sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted">
-                <Clock3 size={14} /> Provider status
+                <Clock3 size={14} /> Market data provider
               </div>
               <span className="rounded-md border border-line px-2 py-1 text-[10px] text-muted">READ ONLY</span>
             </div>
             <div className="mt-5">
               <div className="text-xl font-semibold text-white">
-                {loading ? "Checking connection…" : status?.configured ? "Analytics token configured" : "Configuration needed"}
+                {initialLoading ? "Connecting…" : providerStatus?.provider ?? "Provider unavailable"}
               </div>
               <p className="mt-2 text-xs leading-5 text-muted">
-                {status?.note ?? "Checking the local Arthvest API."}
+                {providerStatus?.note ?? "Checking the Arthvest market-data API."}
               </p>
+              <p className="mt-2 text-[11px] text-muted">Automatic refresh every {refreshSeconds} seconds.</p>
             </div>
             <button
               type="button"
-              onClick={() => void loadMarketData()}
-              disabled={loading}
+              onClick={() => void refreshMarketData()}
+              disabled={refreshing}
               className="mt-5 inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-slate-200 transition hover:border-accent/50 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-accent/50"
             >
-              <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Refresh market data
+              <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
+              {refreshing ? "Refreshing…" : "Refresh market data"}
             </button>
           </div>
         </section>
 
+        <StockDiscovery streamConfigured={providerStatus?.stream_configured ?? null} />
+
         {error ? (
           <div role="alert" className="mb-5 rounded-xl border border-amber-300/25 bg-amber-300/[0.04] p-4 text-sm leading-6 text-amber-100">
-            {error}
+            <div>{error}</div>
+            {snapshot ? (
+              <div className="mt-1 text-xs text-amber-100/75">
+                Showing the last successful response from {formatAge(snapshot.fetched_at)}; its original source timestamp and freshness labels are unchanged.
+              </div>
+            ) : null}
           </div>
         ) : null}
 
         <section aria-labelledby="market-quotes-title">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Upstox · Market quote API</div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
+                {snapshot?.provider ?? providerStatus?.provider ?? "Selected provider"} · Quotes
+              </div>
               <h2 id="market-quotes-title" className="mt-2 text-xl font-medium text-white sm:text-2xl">Index snapshot</h2>
             </div>
             <div className="text-xs text-muted">
               {snapshot
-                ? "Fetched " + formatTimestamp(snapshot.generated_at) + " · " + snapshot.available_count + "/" + snapshot.total_count + " available"
-                : "No quote values are shown until the provider responds"}
+                ? `Fetched ${formatTimestamp(snapshot.fetched_at)} · ${snapshot.available_count}/${snapshot.total_count} available${snapshot.cached ? " · cached" : ""}`
+                : "No quote values have been returned by the backend yet"}
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {quotes.map((quote) => {
-              const positive = quote.change !== null && quote.change >= 0;
-              const hasQuote = quote.status === "available" && quote.last_price !== null;
+            {INSTRUMENTS.map((instrument) => {
+              const quote = quotesByKey.get(instrument.key);
+              const available = quote?.status === "available" && quote.last_price !== null;
+              const positive = quote?.change !== null && quote?.change !== undefined && quote.change >= 0;
               return (
-                <article key={quote.key} className="rounded-2xl border border-line bg-panel/70 p-5 sm:p-6">
+                <article key={instrument.key} className="rounded-2xl border border-line bg-panel/70 p-5 sm:p-6">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-xs font-medium tracking-[0.12em] text-muted">{quote.instrument_key}</div>
-                      <h3 className="mt-2 text-lg font-medium text-white">{quote.name}</h3>
+                      <div className="text-xs font-medium tracking-[0.12em] text-muted">{quote?.instrument_id ?? instrument.instrumentId}</div>
+                      <h3 className="mt-2 text-lg font-medium text-white">{quote?.symbol ?? instrument.name}</h3>
                     </div>
-                    <span className={"rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.12em] " +
-                      (hasQuote ? "border-accent/25 bg-accent/5 text-accent" : "border-line text-muted")}>
-                      {hasQuote ? "Quote available" : loading ? "Loading" : "No data"}
+                    <span className={`rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.12em] ${quote ? quoteClass(quote) : "border-line text-muted"}`}>
+                      {quote ? freshnessLabel(quote) : initialLoading ? "Loading" : "No quote"}
                     </span>
                   </div>
                   <div className="mt-7">
                     <div className="text-3xl font-light tracking-tight text-white">
-                      {hasQuote ? formatPrice(quote.last_price) : "—"}
+                      {available && quote ? formatPrice(quote.last_price, quote.currency) : "—"}
                     </div>
-                    <div className={"mt-2 flex items-center gap-1.5 text-sm " +
-                      (!hasQuote || quote.change === null ? "text-muted" : positive ? "text-accent" : "text-rose-300")}>
-                      {!hasQuote || quote.change === null ? null : positive ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
-                      {hasQuote ? formatSigned(quote.change) + " (" + formatSigned(quote.change_percent, "%") + ")" : "Waiting for a validated provider quote"}
+                    <div className={`mt-2 flex items-center gap-1.5 text-sm ${!available || !quote?.change ? "text-muted" : positive ? "text-accent" : "text-rose-300"}`}>
+                      {!available || quote?.change === null || quote?.change === undefined
+                        ? null
+                        : positive ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
+                      {available && quote
+                        ? `${formatSigned(quote.change, quote.currency)} (${formatSigned(quote.change_percent, null, "%")})`
+                        : "No provider quote available"}
                     </div>
                   </div>
-                  <div className="mt-6 grid grid-cols-3 gap-2 border-t border-line pt-4">
-                    {[
-                      { label: "Open", value: quote.open },
-                      { label: "High", value: quote.high },
-                      { label: "Low", value: quote.low },
-                    ].map((metric) => (
-                      <div key={metric.label}>
-                        <div className="text-[10px] text-muted">{metric.label}</div>
-                        <div className="mt-1 text-sm text-slate-200">{hasQuote ? formatPrice(metric.value) : "—"}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-4 flex items-center gap-2 text-[10px] leading-4 text-muted">
-                    <Clock3 size={12} />
-                    Quote timestamp: {hasQuote ? formatTimestamp(quote.timestamp) : "Not available"}
+                  <div className="mt-6 grid grid-cols-2 gap-2 border-t border-line pt-4 text-[10px] leading-4 text-muted">
+                    <div>Source</div><div className="text-right text-slate-200">{quote?.source ?? "Not available"}</div>
+                    <div>Source timestamp</div><div className="text-right text-slate-200">{formatTimestamp(quote?.source_timestamp)}</div>
+                    <div>Fetched</div><div className="text-right text-slate-200">{quote ? formatAge(quote.fetched_at) : "Not fetched"}</div>
+                    <div>Currency</div><div className="text-right text-slate-200">{quote?.currency ?? "Not supplied"}</div>
                   </div>
                 </article>
               );
@@ -312,68 +271,47 @@ export default function MarketsPage() {
           </div>
         </section>
 
-        {!status?.configured ? (
-          <section aria-labelledby="setup-title" className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/70">
-            <div className="border-b border-line px-5 py-5 sm:px-7">
-              <div className="text-[10px] uppercase tracking-[0.2em] text-accent">One-time local setup</div>
-              <h2 id="setup-title" className="mt-2 text-xl font-medium text-white">Connect your Upstox Analytics Token</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-                The page is ready, but the backend needs your token before it can request actual quotes. Never put the token in frontend code or send it through chat.
-              </p>
-            </div>
-            <div className="grid gap-4 p-5 sm:grid-cols-3 sm:p-7">
-              <div className="rounded-xl border border-line bg-[#0B1017] p-4">
-                <div className="text-xs font-medium text-white">01 · Generate token</div>
-                <p className="mt-2 text-xs leading-5 text-muted">Create an Analytics Token in the Upstox Developer Apps portal. It is read-only for market-data GET APIs.</p>
-                <a href="https://account.upstox.com/developer/apps" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-xs text-accent hover:underline">
-                  Developer Apps <ExternalLink size={12} />
-                </a>
-              </div>
-              <div className="rounded-xl border border-line bg-[#0B1017] p-4">
-                <div className="text-xs font-medium text-white">02 · Save it privately</div>
-                <p className="mt-2 text-xs leading-5 text-muted">Open backend/.env and set the variable below. Keep the value local and out of GitHub.</p>
-                <code className="mt-3 block break-all rounded-lg border border-line bg-panel px-3 py-2 text-[11px] text-slate-200">UPSTOX_ANALYTICS_TOKEN=your_token_here</code>
-              </div>
-              <div className="rounded-xl border border-line bg-[#0B1017] p-4">
-                <div className="text-xs font-medium text-white">03 · Restart the API</div>
-                <p className="mt-2 text-xs leading-5 text-muted">From the backend folder, run the command below so Uvicorn reads your local .env file.</p>
-                <code className="mt-3 block break-all rounded-lg border border-line bg-panel px-3 py-2 text-[11px] text-slate-200">uvicorn app.main:app --reload --env-file .env</code>
-              </div>
-            </div>
-          </section>
-        ) : null}
+        <section aria-labelledby="history-title" className="mt-6 rounded-2xl border border-line bg-panel/70 p-5 sm:p-6">
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-accent">
+            <TrendingUp size={14} /> Historical data
+          </div>
+          <h2 id="history-title" className="mt-2 text-lg font-medium text-white">No historical chart is available</h2>
+          <p className="mt-2 text-xs leading-5 text-muted">
+            The configured provider currently supplies quote snapshots only. Arthvest will show a chart when a historical-data endpoint is available; no sample series are displayed.
+          </p>
+        </section>
 
-        {snapshot ? (
-          <section aria-labelledby="provenance-title" className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel/70">
-            <div className="border-b border-line px-5 py-5 sm:px-7">
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-accent">
-                <ShieldCheck size={14} /> Data provenance and limits
-              </div>
-              <h2 id="provenance-title" className="mt-2 text-xl font-medium text-white">Know what this feed does — and does not — mean</h2>
+        {providerStatus?.provider === "Upstox" ? (
+          <section className="mt-6 rounded-2xl border border-line bg-panel/70 p-5 sm:p-6">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-accent">
+              <ShieldCheck size={14} /> Provider provenance
             </div>
-            <div className="grid gap-4 p-5 sm:grid-cols-2 sm:p-7">
-              <div className="rounded-xl border border-line bg-[#0B1017] p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-white"><TrendingUp size={15} /> Quote provenance</div>
-                <p className="mt-2 text-xs leading-5 text-muted">
-                  Provider: {snapshot.provider}. Snapshot fetched at {formatTimestamp(snapshot.generated_at)}. Latest provider timestamp: {formatTimestamp(snapshot.data_as_of)}.
-                </p>
-                <a href={snapshot.source_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-xs text-accent hover:underline">
-                  Upstox quote API documentation <ExternalLink size={12} />
-                </a>
-              </div>
-              <div className="rounded-xl border border-line bg-[#0B1017] p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-white"><ShieldCheck size={15} /> Read-only by design</div>
-                <ul className="mt-2 space-y-2 text-xs leading-5 text-muted">
-                  {snapshot.limitations.map((limitation) => <li key={limitation}>• {limitation}</li>)}
-                </ul>
-              </div>
+            <p className="mt-2 text-xs leading-5 text-muted">
+              Upstox quotes use a backend-only read-only Analytics Token. The credential is never sent to this page or included in API responses.
+            </p>
+            <a href="https://upstox.com/developer/api-documentation/get-full-market-quote/" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-xs text-accent hover:underline">
+              Upstox quote API documentation <ExternalLink size={12} />
+            </a>
+          </section>
+        ) : providerStatus?.provider === "Yahoo Finance" ? (
+          <section className="mt-6 rounded-2xl border border-line bg-panel/70 p-5 sm:p-6">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-accent">
+              <ShieldCheck size={14} /> Provider provenance
             </div>
+            <p className="mt-2 text-xs leading-5 text-muted">
+              Yahoo Finance chart data is best-effort and may be delayed or stale. Check each quote&apos;s source timestamp; Arthvest does not label this feed real-time.
+            </p>
+            {snapshot ? (
+              <a href={snapshot.source_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-xs text-accent hover:underline">
+                Yahoo Finance source <ExternalLink size={12} />
+              </a>
+            ) : null}
           </section>
         ) : null}
 
         <footer className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-[10px] leading-5 text-muted">
           <span>ARTHVEST · MACRO + MARKET INTELLIGENCE</span>
-          <span className="flex items-center gap-2"><ShieldCheck size={12} /> No order placement · No credential exposure · No fabricated quotes</span>
+          <span className="flex items-center gap-2"><ShieldCheck size={12} /> Read-only data · No credential exposure · No sample prices</span>
         </footer>
       </div>
     </main>

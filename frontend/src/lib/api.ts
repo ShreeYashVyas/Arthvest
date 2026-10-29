@@ -873,3 +873,263 @@ export async function fetchMacroRevisions(
   }
   return payload;
 }
+
+export type MarketProviderStatus = {
+  provider_setting: "auto" | "upstox" | "yahoo";
+  provider: string;
+  configured: boolean;
+  stream_configured: boolean;
+  note: string;
+  cache_seconds: number;
+  auto_refresh_seconds: number;
+};
+
+export type MarketQuote = {
+  key: string;
+  symbol: string;
+  instrument_id: string;
+  provider_symbol: string | null;
+  last_price: number | null;
+  change: number | null;
+  change_percent: number | null;
+  currency: string | null;
+  source: string;
+  source_timestamp: string | null;
+  fetched_at: string;
+  freshness: "fresh" | "delayed" | "stale" | "unknown";
+  status: "available" | "unavailable";
+};
+
+export type MarketQuotesResponse = {
+  provider_setting: "auto" | "upstox" | "yahoo";
+  provider: string;
+  source_url: string;
+  status: "available" | "partial";
+  fetched_at: string;
+  available_count: number;
+  total_count: number;
+  cache_seconds: number;
+  cached: boolean;
+  quotes: MarketQuote[];
+};
+
+function isMarketProviderStatus(value: unknown): value is MarketProviderStatus {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  return ["auto", "upstox", "yahoo"].includes(String(data.provider_setting)) &&
+    typeof data.provider === "string" && typeof data.configured === "boolean" &&
+    typeof data.stream_configured === "boolean" &&
+    typeof data.note === "string" && typeof data.cache_seconds === "number" &&
+    typeof data.auto_refresh_seconds === "number";
+}
+
+function isMarketQuote(value: unknown): value is MarketQuote {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  const nullableNumber = (item: unknown) => item === null ||
+    (typeof item === "number" && Number.isFinite(item));
+  const nullableString = (item: unknown) => item === null || typeof item === "string";
+  return typeof data.key === "string" && typeof data.symbol === "string" &&
+    typeof data.instrument_id === "string" && nullableString(data.provider_symbol) &&
+    nullableNumber(data.last_price) && nullableNumber(data.change) &&
+    nullableNumber(data.change_percent) && nullableString(data.currency) &&
+    typeof data.source === "string" && nullableString(data.source_timestamp) &&
+    typeof data.fetched_at === "string" &&
+    ["fresh", "delayed", "stale", "unknown"].includes(String(data.freshness)) &&
+    ["available", "unavailable"].includes(String(data.status));
+}
+
+function isMarketQuotesResponse(value: unknown): value is MarketQuotesResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  return ["auto", "upstox", "yahoo"].includes(String(data.provider_setting)) &&
+    typeof data.provider === "string" && typeof data.source_url === "string" &&
+    ["available", "partial"].includes(String(data.status)) &&
+    typeof data.fetched_at === "string" && typeof data.available_count === "number" &&
+    typeof data.total_count === "number" && typeof data.cache_seconds === "number" &&
+    typeof data.cached === "boolean" && Array.isArray(data.quotes) &&
+    data.quotes.every(isMarketQuote);
+}
+
+async function marketApiError(response: Response, fallback: string): Promise<Error> {
+  const payload: unknown = await response.json().catch(() => null);
+  const detail = typeof payload === "object" && payload !== null &&
+      "detail" in payload && typeof (payload as { detail?: unknown }).detail === "string"
+    ? (payload as { detail: string }).detail
+    : fallback;
+  return new Error(detail);
+}
+
+export async function fetchMarketProviderStatus(
+  signal?: AbortSignal,
+): Promise<MarketProviderStatus> {
+  const response = await fetch(API_BASE_URL + "/api/market/status", {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) throw await marketApiError(response, "Market provider status is unavailable.");
+  const payload: unknown = await response.json().catch(() => null);
+  if (!isMarketProviderStatus(payload)) {
+    throw new Error("Market provider status returned an unexpected response format.");
+  }
+  return payload;
+}
+
+export async function fetchMarketQuotes(
+  symbols?: string[],
+  signal?: AbortSignal,
+): Promise<MarketQuotesResponse> {
+  const query = symbols?.length
+    ? "?symbols=" + encodeURIComponent(symbols.join(","))
+    : "";
+  const response = await fetch(API_BASE_URL + "/api/market/quotes" + query, {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) throw await marketApiError(response, "Market quotes are unavailable.");
+  const payload: unknown = await response.json().catch(() => null);
+  if (!isMarketQuotesResponse(payload)) {
+    throw new Error("Market quote API returned an unexpected response format.");
+  }
+  return payload;
+}
+
+export type MarketInstrument = {
+  instrument_key: string;
+  trading_symbol: string;
+  name: string;
+  short_name: string | null;
+  exchange: "NSE" | "BSE";
+  segment: "NSE_EQ" | "BSE_EQ";
+  instrument_type: string;
+  isin: string | null;
+  lot_size: number | null;
+  tick_size: number | null;
+  source: string;
+  catalogue_updated_at: string | null;
+};
+
+export type InstrumentSearchResponse = {
+  query: string;
+  exchange: "ALL" | "NSE" | "BSE";
+  instruments: MarketInstrument[];
+  page: { page_number: number; total_pages: number; records: number; total_records: number };
+  source: string;
+  catalogue_updated_at: string | null;
+};
+
+export type MarketInstrumentQuote = {
+  instrument_key: string;
+  symbol: string;
+  name: string;
+  exchange: string;
+  segment: string;
+  instrument_type: string;
+  isin: string | null;
+  last_price: number | null;
+  change: number | null;
+  change_percent: number | null;
+  previous_close: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number | null;
+  currency: string | null;
+  source: string;
+  source_timestamp: string | null;
+  fetched_at: string;
+  freshness: "fresh" | "stale" | "unknown";
+  status: "available" | "unavailable";
+};
+
+export type MarketInstrumentQuoteResponse = {
+  provider: string;
+  source_url: string;
+  fetched_at: string;
+  cached: boolean;
+  quote: MarketInstrumentQuote;
+};
+
+export type MarketCandle = {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+export type MarketHistoryResponse = {
+  instrument_key: string;
+  symbol: string;
+  exchange: string;
+  provider: string;
+  unit: string;
+  interval: number;
+  from_date: string;
+  to_date: string;
+  fetched_at: string;
+  candles: MarketCandle[];
+};
+
+export async function searchMarketInstruments(
+  query: string,
+  exchange: "ALL" | "NSE" | "BSE" = "ALL",
+  page = 1,
+  signal?: AbortSignal,
+): Promise<InstrumentSearchResponse> {
+  const params = new URLSearchParams({ q: query, exchange, page: String(page), records: "20" });
+  const response = await fetch(API_BASE_URL + "/api/market/instruments/search?" + params, {
+    cache: "no-store", signal,
+  });
+  if (!response.ok) throw await marketApiError(response, "Instrument search is unavailable.");
+  const payload: unknown = await response.json().catch(() => null);
+  if (typeof payload !== "object" || payload === null ||
+      !Array.isArray((payload as { instruments?: unknown }).instruments) ||
+      typeof (payload as { source?: unknown }).source !== "string") {
+    throw new Error("Instrument search returned an unexpected response format.");
+  }
+  return payload as InstrumentSearchResponse;
+}
+
+export async function fetchInstrumentQuote(
+  instrumentKey: string,
+  signal?: AbortSignal,
+): Promise<MarketInstrumentQuoteResponse> {
+  const response = await fetch(API_BASE_URL + "/api/market/instruments/" +
+    encodeURIComponent(instrumentKey) + "/quote", { cache: "no-store", signal });
+  if (!response.ok) throw await marketApiError(response, "The selected instrument quote is unavailable.");
+  const payload: unknown = await response.json().catch(() => null);
+  if (typeof payload !== "object" || payload === null ||
+      typeof (payload as { quote?: unknown }).quote !== "object") {
+    throw new Error("Instrument quote returned an unexpected response format.");
+  }
+  return payload as MarketInstrumentQuoteResponse;
+}
+
+export async function fetchInstrumentHistory(
+  instrumentKey: string,
+  signal?: AbortSignal,
+  range: "1M" | "3M" | "1Y" | "5Y" = "1Y",
+): Promise<MarketHistoryResponse> {
+  const to = new Date();
+  const from = new Date(to);
+  const daysByRange = { "1M": 30, "3M": 90, "1Y": 365, "5Y": 1825 };
+  from.setDate(from.getDate() - daysByRange[range]);
+  const date = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+  const params = new URLSearchParams({ unit: "days", interval: "1", from_date: date(from), to_date: date(to) });
+  const response = await fetch(API_BASE_URL + "/api/market/instruments/" +
+    encodeURIComponent(instrumentKey) + "/history?" + params, { cache: "no-store", signal });
+  if (!response.ok) throw await marketApiError(response, "Historical candles are unavailable.");
+  const payload: unknown = await response.json().catch(() => null);
+  if (typeof payload !== "object" || payload === null ||
+      !Array.isArray((payload as { candles?: unknown }).candles)) {
+    throw new Error("Historical data returned an unexpected response format.");
+  }
+  return payload as MarketHistoryResponse;
+}
+
+export function marketStreamUrl(instrumentKey: string): string {
+  const websocketBase = API_BASE_URL.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+  return websocketBase + "/api/market/stream/" + encodeURIComponent(instrumentKey);
+}
