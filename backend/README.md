@@ -1,76 +1,80 @@
-# Arthvest API
+# Arthvest Core API
 
-## Requirements
-- Python 3.11+
+The Core backend serves the macro dashboard, historical analytics, optional
+archive, health checks, and provider-independent market quotes.
 
-## Setup (Windows PowerShell)
+## Requirements and startup
+
+Use Python 3.11 or newer. From the repository root in Windows PowerShell:
 
 ```powershell
 cd backend
-python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.example .env  # only when .env does not already exist
 uvicorn app.main:app --reload --env-file .env
 ```
 
-Use these endpoints:
-- `GET /` — service information
-- `GET /health` — health status
-- `GET /docs` — interactive API documentation
+The health check is `GET /health`; interactive API documentation is at
+`/docs`. Do not commit `.env` or put credentials in the frontend.
 
-## Free local AI model (recommended for development)
+## Upstox market quotes
 
-Arthvest defaults to Ollama on your own computer. The six research stages use the local qwen3:4b model by default; no OpenAI API key is required and inference requests stay on the machine running the backend. Downloading the model requires internet once, and inference uses local RAM/GPU.
+Core requests read-only index quotes from Upstox. Generate an Analytics Token
+under the Analytics tab in [Upstox Developer Apps](https://account.upstox.com/developer/apps)
+and set `UPSTOX_ANALYTICS_TOKEN` in the private `backend/.env` file. The token
+is sent only as a backend Bearer credential and is never returned by Core.
+This Analytics Token is sufficient for the market-data quote API; an API key
+and client secret alone do not authenticate quote requests. The alternative
+OAuth flow requires an interactive authorization code exchange for an access
+token. See the [Analytics Token guide](https://upstox.com/developer/api-documentation/analytics-token/),
+[authentication guide](https://upstox.com/developer/api-documentation/authentication/),
+and [Full Market Quotes API](https://upstox.com/developer/api-documentation/get-full-market-quote/).
 
-1. Install [Ollama for Windows](https://ollama.com/download/windows) and start the Ollama app.
-2. In PowerShell, download the model:
+## Provider selection
 
-   ```powershell
-   ollama pull qwen3:4b
-   ollama list
-   ```
+`MARKET_DATA_PROVIDER` accepts `auto`, `upstox`, or `yahoo`. `auto` selects
+Upstox when `UPSTOX_ANALYTICS_TOKEN` is set, otherwise it selects the
+best-effort public Yahoo Finance chart feed. An Upstox authentication failure
+is returned as an error and is never silently hidden by switching providers.
+Yahoo Finance data may be delayed or stale, and its chart endpoint is
+undocumented, subject to availability, and subject to Yahoo's terms. Set
+`MARKET_DATA_CACHE_SECONDS` (default 30; bounded to 0–300 seconds) to adjust
+the backend cache. The frontend refresh interval can be configured with
+`NEXT_PUBLIC_MARKET_REFRESH_SECONDS` (default 60; bounded to 30–300 seconds).
 
-3. Copy .env.example to .env if needed, then set:
+`GET /api/market/status` reports provider selection and configuration.
+`GET /api/market/quotes` returns normalized NIFTY 50, NIFTY BANK, and India VIX
+quotes; optional `symbols` values may be configured keys, display symbols, or
+instrument identifiers. Upstox legacy endpoints remain available under
+`/api/market/upstox`. A quote snapshot is not a historical series and does not
+place orders; Core shows an empty state until a real historical-data endpoint
+is configured.
 
-   ```dotenv
-   ARTHVEST_LLM_PROVIDER=ollama
-   OLLAMA_BASE_URL=http://127.0.0.1:11434
-   ARTHVEST_AGENT_MODEL=qwen3:4b
-   ```
+The stock discovery page searches the current Upstox NSE/BSE equity universe.
+It uses the Upstox instrument search API and falls back to Upstox's official
+compressed complete instrument master when search is unavailable. Search
+results exclude debt and fund instrument series. Selected stocks use the
+instrument key returned by Upstox for quotes and V3 historical candles. The
+Markets page offers 1-month, 3-month, 1-year, and 5-year daily-close ranges.
+The V3 streaming bridge decodes Upstox's published Protobuf schema and keeps a
+single upstream connection per Core process. Upstox rejected the configured
+Analytics Token for V3 feed authorization; live streaming therefore requires
+a separate `UPSTOX_ACCESS_TOKEN` OAuth access token. Core does not refresh or
+modify tokens. Without that variable, the UI reports the stream as unavailable
+and uses clearly labelled REST snapshot fallback.
 
-4. Restart the backend and open GET /api/agents/status. It should report configured: true only when Ollama is reachable and the model is installed. Then open the frontend Agents page and run a research request.
+## Optional archive
 
-Use ARTHVEST_LLM_PROVIDER=openai and configure OPENAI_API_KEY only when you deliberately want paid cloud inference. Local mode disables OpenAI tracing and does not require that key. Macro and market data collection can still use the internet; only model inference is local.
+Set `DATABASE_URL` to a PostgreSQL connection URL to retain macro source
+observations, revisions, and source-check history. Without it, live macro
+fetching and dashboard history continue to work while archive-backed routes
+report that persistence is disabled.
 
-
-Install development tooling and run tests/lint checks:
+## Tests
 
 ```powershell
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ruff check --select E4,E7,E9,F app tests
 ```
-
-## Optional persistent archive
-
-Set `DATABASE_URL` to a PostgreSQL URL such as `postgresql+psycopg://USER:PASSWORD@HOST:5432/arthvest` to retain source observations, revisions, and source-fetch checks. Add it to private environment configuration, not Git. Leaving it unset is supported: live FRED requests still work, while archive endpoints return HTTP 503. Initial SQLAlchemy tables are created on the first storage operation.
-
-New endpoints:
-- `GET /api/macro/storage` — storage readiness and counts
-- `GET /api/macro/archive/{indicator_key}?limit=12` — current archived source values by observation date
-- `GET /api/macro/revisions/{indicator_key}?limit=20` — upstream value revisions
-- `GET /api/macro/source-checks?limit=24` — recent source fetch outcomes
-
-The archive stores source-native FRED values. For example, `CPIAUCSL` is the CPI index, not the derived year-over-year inflation rate. Persistence errors are logged but do not interrupt live feed delivery; check the storage endpoint to verify the database is available.
-
-- `GET /api/macro/analytics/{indicator_key}?limit=12` — descriptive historical trend and distribution statistics (requires `DATABASE_URL` and archived observations)
-
-
-## Archived cross-indicator comparison
-
-When `DATABASE_URL` points to a reachable database, use `GET /api/macro/compare?indicators=fed-funds,us-inflation,us-unemployment&years=5` to compare 2–5 supported indicators across a 1, 3, 5, or 10 year window. Relative trends are independently rebased to 100 at each indicator's first in-window archived observation. Different source frequencies are preserved, and series without enough history or a positive baseline are marked explicitly.
-
-
-## Scheduled archive ingestion
-
-Run `python -m scripts.ingest_macro_archive` from the backend directory to fetch each configured indicator and verify that persisted source-check records were added. It refuses to start without `DATABASE_URL`, checks storage connectivity first, and returns a non-zero exit code for upstream failures or unconfirmed archive writes. The repository's **Archive Macro Observations** workflow runs this daily and can also be started manually; add a repository Actions secret named `DATABASE_URL` separately from deployment secrets.

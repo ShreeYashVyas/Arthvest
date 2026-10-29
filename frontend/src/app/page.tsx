@@ -553,7 +553,6 @@ export default function Home() {
 
           <div className="flex items-center gap-3 text-xs text-muted">
             <Link href="/markets" className="rounded-lg border border-accent/25 bg-accent/5 px-3 py-2 text-accent transition hover:border-accent/50">MARKET PULSE ↗</Link>
-            <Link href="/agents" className="rounded-lg border border-line px-3 py-2 text-muted transition hover:border-accent/50 hover:text-accent">AI RESEARCH ↗</Link>
             <span className="hidden sm:inline">PHASE 01 / FOUNDATION</span>
             <span className="h-4 w-px bg-line" />
             <span className="flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-2">

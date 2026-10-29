@@ -8,12 +8,19 @@ from app.services import upstox_service
 client = TestClient(app)
 
 
-def test_upstox_status_reports_missing_token_without_exposing_credentials(monkeypatch) -> None:
-    monkeypatch.delenv("UPSTOX_ANALYTICS_TOKEN", raising=False)
+def test_upstox_status_reports_missing_token_without_exposing_credentials(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        upstox_service,
+        "_analytics_token",
+        lambda: "",
+    )
 
     response = client.get("/api/market/upstox/status")
 
     assert response.status_code == 200
+
     payload = response.json()
     assert payload["provider"] == "Upstox"
     assert payload["configured"] is False
