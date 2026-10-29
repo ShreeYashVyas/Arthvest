@@ -115,8 +115,8 @@ def _record_failed_source_check(series_id: str, error_code: str, elapsed_ms: int
         observation_store.record_source_failure(
             _indicator_key_for_series(series_id), series_id, error_code, elapsed_ms
         )
-    except Exception:
-        logger.warning("Could not persist failed source check for %s", series_id, exc_info=True)
+    except Exception as exc:
+        logger.warning("Could not persist failed source check for %s (%s)", series_id, type(exc).__name__)
 
 
 def _record_successful_source_check(
@@ -126,8 +126,8 @@ def _record_successful_source_check(
         observation_store.record_source_success(
             _indicator_key_for_series(series_id), series_id, observations, retrieved_at, elapsed_ms
         )
-    except Exception:
-        logger.warning("Could not persist source observations for %s", series_id, exc_info=True)
+    except Exception as exc:
+        logger.warning("Could not persist source observations for %s (%s)", series_id, type(exc).__name__)
 
 
 

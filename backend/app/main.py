@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.health import router as health_router
 from app.api.routes.macro import router as macro_router
 from app.api.routes.market import market_data_router, router as market_router
+from app.api.routes.user_data import router as watchlist_router
 
 def configured_cors_origins() -> list[str]:
     """Read comma-separated frontend origins from the environment."""
@@ -38,6 +39,7 @@ app.include_router(health_router)
 app.include_router(macro_router)
 app.include_router(market_data_router)
 app.include_router(market_router)
+app.include_router(watchlist_router)
 
 
 @app.get("/", tags=["root"])

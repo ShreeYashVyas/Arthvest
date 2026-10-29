@@ -3,23 +3,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, ChevronLeft, ChevronRight, Clock3, Plus, RefreshCw, Search, Star, Trash2, Wifi, WifiOff, X } from "lucide-react";
 import {
+  createWatchlist,
+  deleteWatchlist,
   fetchInstrumentHistory,
   fetchInstrumentQuote,
+  fetchWatchlists,
   marketStreamUrl,
+  renameWatchlist,
+  replaceWatchlistEntries,
   searchMarketInstruments,
   type InstrumentSearchResponse,
   type MarketCandle,
   type MarketInstrument,
   type MarketInstrumentQuote,
+  type MarketWatchlist,
 } from "@/lib/api";
 
-const WATCHLIST_STORAGE_KEY = "arthvest.market.watchlist.v1";
 const MAX_WATCHLIST_SIZE = 20;
 
 function formatTime(value: string | null | undefined): string {
   if (!value) return "Not supplied";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? "Timestamp unavailable" : parsed.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatAge(value: string | null): string {
+  if (!value) return "No upstream message received";
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (!Number.isFinite(ageSeconds)) return "Message age unavailable";
+  if (ageSeconds < 60) return `${ageSeconds}s ago`;
+  if (ageSeconds < 3600) return `${Math.floor(ageSeconds / 60)}m ago`;
+  return `${Math.floor(ageSeconds / 3600)}h ago`;
 }
 
 function money(value: number | null | undefined, currency = "INR"): string {
@@ -29,22 +43,20 @@ function money(value: number | null | undefined, currency = "INR"): string {
 
 function freshness(quote: MarketInstrumentQuote | undefined): string {
   if (!quote || quote.status !== "available") return "Unavailable";
-  if (quote.freshness === "fresh") return "Fresh snapshot";
   if (quote.freshness === "stale") return "Stale source data";
+  if (!quote.source_timestamp) return "Timestamp unknown";
+  const sourceTime = new Date(quote.source_timestamp).getTime();
+  if (!Number.isFinite(sourceTime)) return "Timestamp unknown";
+  const ageSeconds = (Date.now() - sourceTime) / 1000;
+  if (ageSeconds < -2) return "Timestamp unknown";
+  if (ageSeconds > 300) return "Stale source data";
+  if (quote.freshness === "fresh") return "Fresh snapshot";
   return "Timestamp unknown";
 }
 
 function quoteTint(quote: MarketInstrumentQuote | undefined): string {
-  if (!quote || quote.status !== "available" || quote.freshness === "stale") return "text-amber-200";
-  return quote.freshness === "fresh" ? "text-accent" : "text-muted";
-}
-
-function validStoredInstrument(value: unknown): value is MarketInstrument {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Partial<MarketInstrument>;
-  return typeof item.instrument_key === "string" && typeof item.name === "string" &&
-    typeof item.trading_symbol === "string" && (item.exchange === "NSE" || item.exchange === "BSE") &&
-    typeof item.segment === "string" && typeof item.instrument_type === "string";
+  if (!quote || quote.status !== "available" || freshness(quote) === "Stale source data") return "text-amber-200";
+  return freshness(quote) === "Fresh snapshot" ? "text-accent" : "text-muted";
 }
 
 function PriceChart({ candles }: { candles: MarketCandle[] }) {
@@ -84,18 +96,41 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
   const [activeIndex, setActiveIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<MarketInstrument | null>(null);
+  const selectedInstrumentKeyRef = useRef<string | null>(null);
+  const quoteRequestRevision = useRef(0);
+  const manualQuoteControllerRef = useRef<AbortController | null>(null);
+  selectedInstrumentKeyRef.current = selected?.instrument_key ?? null;
   const [selectedQuote, setSelectedQuote] = useState<MarketInstrumentQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [candles, setCandles] = useState<MarketCandle[]>([]);
+  const [historyFetchedAt, setHistoryFetchedAt] = useState<string | null>(null);
+  const [technicalIndicators, setTechnicalIndicators] = useState<Awaited<ReturnType<typeof fetchInstrumentHistory>>["technical_indicators"] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyRange, setHistoryRange] = useState<"1M" | "3M" | "1Y" | "5Y">("1Y");
   const [streamState, setStreamState] = useState("disconnected");
-  const [watchlist, setWatchlist] = useState<MarketInstrument[]>([]);
+  const [lastStreamMessageAt, setLastStreamMessageAt] = useState<string | null>(null);
+  const [, setAgeRefresh] = useState(0);
+  const [watchlists, setWatchlists] = useState<MarketWatchlist[]>([]);
+  const [activeWatchlistId, setActiveWatchlistId] = useState<number | null>(null);
+  const [watchlistName, setWatchlistName] = useState("");
+  const [watchlistRename, setWatchlistRename] = useState("");
   const [watchlistQuotes, setWatchlistQuotes] = useState<Record<string, MarketInstrumentQuote>>({});
   const [watchlistReady, setWatchlistReady] = useState(false);
+  const [watchlistSaving, setWatchlistSaving] = useState(false);
   const [watchlistError, setWatchlistError] = useState<string | null>(null);
+  const [watchlistQuoteError, setWatchlistQuoteError] = useState<string | null>(null);
+  const watchlist = useMemo(
+    () => watchlists.find((item) => item.id === activeWatchlistId)?.instruments ?? [],
+    [watchlists, activeWatchlistId],
+  );
+
+  useEffect(() => {
+    if (!selected) return;
+    const timer = window.setInterval(() => setAgeRefresh((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [selected]);
 
   useEffect(() => {
     let active = true;
@@ -123,18 +158,21 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
   }, [query, exchange, page, searchRevision]);
 
   useEffect(() => {
-    try {
-      const stored: unknown = JSON.parse(window.localStorage.getItem(WATCHLIST_STORAGE_KEY) ?? "[]");
-      if (Array.isArray(stored)) setWatchlist(stored.filter(validStoredInstrument).slice(0, MAX_WATCHLIST_SIZE));
-    } catch {
-      window.localStorage.removeItem(WATCHLIST_STORAGE_KEY);
-    }
-    setWatchlistReady(true);
+    const controller = new AbortController();
+    void fetchWatchlists(controller.signal)
+      .then((items) => {
+        if (controller.signal.aborted) return;
+        setWatchlists(items);
+        setActiveWatchlistId(items[0]?.id ?? null);
+        setWatchlistRename(items[0]?.name ?? "");
+        setWatchlistError(null);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setWatchlistError(error instanceof Error ? error.message : "Saved watchlists are unavailable.");
+      })
+      .finally(() => { if (!controller.signal.aborted) setWatchlistReady(true); });
+    return () => controller.abort();
   }, []);
-
-  useEffect(() => {
-    if (watchlistReady) window.localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
-  }, [watchlist, watchlistReady]);
 
   const refreshWatchlist = useCallback(async (signal: AbortSignal) => {
     const outcomes = await Promise.allSettled(watchlist.map((instrument) => fetchInstrumentQuote(instrument.instrument_key, signal)));
@@ -144,7 +182,7 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
       if (outcome.status === "fulfilled") updated[watchlist[index].instrument_key] = outcome.value.quote;
     });
     setWatchlistQuotes((current) => ({ ...current, ...updated }));
-    setWatchlistError(outcomes.some((outcome) => outcome.status === "rejected") ? "Some watchlist quotes could not be refreshed." : null);
+    setWatchlistQuoteError(outcomes.some((outcome) => outcome.status === "rejected") ? "Some watchlist quotes could not be refreshed." : null);
   }, [watchlist]);
 
   useEffect(() => {
@@ -159,15 +197,29 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
     if (!selected) return;
     const key = selected.instrument_key;
     const controller = new AbortController();
+    const requestRevision = ++quoteRequestRevision.current;
     setQuoteLoading(true);
     setQuoteError(null);
     void fetchInstrumentQuote(key, controller.signal)
-      .then((response) => { if (!controller.signal.aborted) setSelectedQuote(response.quote); })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) setQuoteError(error instanceof Error ? error.message : "Quote unavailable.");
+      .then((response) => {
+        if (!controller.signal.aborted && quoteRequestRevision.current === requestRevision) {
+          setSelectedQuote(response.quote);
+        }
       })
-      .finally(() => { if (!controller.signal.aborted) setQuoteLoading(false); });
-    return () => controller.abort();
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && quoteRequestRevision.current === requestRevision) {
+          setQuoteError(error instanceof Error ? error.message : "Quote unavailable.");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && quoteRequestRevision.current === requestRevision) setQuoteLoading(false);
+      });
+    return () => {
+      controller.abort();
+      manualQuoteControllerRef.current?.abort();
+      manualQuoteControllerRef.current = null;
+      if (quoteRequestRevision.current === requestRevision) quoteRequestRevision.current += 1;
+    };
   }, [selected]);
 
   useEffect(() => {
@@ -175,6 +227,7 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
     const key = selected.instrument_key;
     let stopped = false;
     let attempts = 0;
+    let retryAllowed = true;
     let retryTimer: number | undefined;
     let socket: WebSocket | null = null;
     const connect = () => {
@@ -182,23 +235,33 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
       setStreamState(attempts ? "reconnecting" : "connecting");
       socket = new WebSocket(marketStreamUrl(key));
       socket.onmessage = (event) => {
+        if (selectedInstrumentKeyRef.current !== key) return;
         try {
           const message: unknown = JSON.parse(String(event.data));
           if (typeof message !== "object" || message === null) return;
-          const data = message as { type?: unknown; detail?: unknown; quote?: MarketInstrumentQuote };
+          const data = message as { type?: unknown; state?: unknown; detail?: unknown; received_at?: unknown; message_received_at?: unknown; quote?: MarketInstrumentQuote };
           if (data.type === "connected") setStreamState("connected");
-          else if (data.type === "quote" && data.quote?.instrument_key === key) {
+          else if (data.type === "connection" && typeof data.state === "string") {
+            setStreamState(data.state);
+            if (typeof data.message_received_at === "string") setLastStreamMessageAt(data.message_received_at);
+          } else if (data.type === "quote" && data.quote?.instrument_key === key && selectedInstrumentKeyRef.current === key) {
             setSelectedQuote((previous) => ({ ...(previous ?? {} as MarketInstrumentQuote), ...data.quote }));
+            setLastStreamMessageAt(typeof data.received_at === "string" ? data.received_at : data.quote.fetched_at);
             setStreamState("streaming");
           } else if (data.type === "unavailable") {
+            retryAllowed = false;
             setQuoteError(typeof data.detail === "string" ? data.detail : "Live feed unavailable.");
-            setStreamState("unavailable");
+            setStreamState(typeof data.state === "string" ? data.state : "unavailable");
           } else if (data.type === "disconnected") setStreamState("disconnected");
         } catch { setStreamState("unavailable"); }
       };
       socket.onerror = () => setStreamState("disconnected");
       socket.onclose = () => {
         if (stopped) return;
+        if (!retryAllowed) {
+          setStreamState("unavailable");
+          return;
+        }
         if (attempts < 3) {
           const delay = Math.min(4000, 500 * (2 ** attempts));
           attempts += 1;
@@ -220,10 +283,19 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
   useEffect(() => {
     if (!selected) return;
     const controller = new AbortController();
+    setCandles([]);
+    setHistoryFetchedAt(null);
+    setTechnicalIndicators(null);
     setHistoryLoading(true);
     setHistoryError(null);
     void fetchInstrumentHistory(selected.instrument_key, controller.signal, historyRange)
-      .then((response) => { if (!controller.signal.aborted) setCandles(response.candles); })
+      .then((response) => {
+        if (!controller.signal.aborted) {
+          setCandles(response.candles);
+          setHistoryFetchedAt(response.fetched_at);
+          setTechnicalIndicators(response.technical_indicators ?? null);
+        }
+      })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setHistoryError(error instanceof Error ? error.message : "Historical data unavailable.");
       })
@@ -251,29 +323,109 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
   const chooseInstrument = (instrument: MarketInstrument) => {
     setSelected(instrument);
     setSelectedQuote(null);
+    setLastStreamMessageAt(null);
     setCandles([]);
     setStreamState("connecting");
     setPage(1);
   };
 
-  const toggleWatchlist = (instrument: MarketInstrument) => {
-    if (watchlistKeys.has(instrument.instrument_key)) {
-      setWatchlist((items) => items.filter((item) => item.instrument_key !== instrument.instrument_key));
-    } else if (watchlist.length < MAX_WATCHLIST_SIZE) {
-      setWatchlist((items) => [...items, instrument]);
+  const toggleWatchlist = async (instrument: MarketInstrument) => {
+    if (activeWatchlistId === null) {
+      setWatchlistError("Create or select a server watchlist before adding instruments.");
+      return;
+    }
+    const next = watchlistKeys.has(instrument.instrument_key)
+      ? watchlist.filter((item) => item.instrument_key !== instrument.instrument_key)
+      : [...watchlist, instrument];
+    if (next.length > MAX_WATCHLIST_SIZE) {
+      setWatchlistError(`A watchlist is limited to ${MAX_WATCHLIST_SIZE} instruments.`);
+      return;
+    }
+    setWatchlistSaving(true);
+    try {
+      const updated = await replaceWatchlistEntries(activeWatchlistId, next.map((item) => item.instrument_key));
+      setWatchlists((items) => items.map((item) => item.id === updated.id ? updated : item));
       setWatchlistError(null);
-    } else setWatchlistError(`Watchlist is limited to ${MAX_WATCHLIST_SIZE} instruments.`);
+    } catch (error) {
+      setWatchlistError(error instanceof Error ? error.message : "Watchlist change was not saved.");
+    } finally {
+      setWatchlistSaving(false);
+    }
+  };
+
+  const createNewWatchlist = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!watchlistName.trim()) return;
+    setWatchlistSaving(true);
+    try {
+      const created = await createWatchlist(watchlistName.trim());
+      setWatchlists((items) => [...items, created]);
+      setActiveWatchlistId(created.id);
+      setWatchlistRename(created.name);
+      setWatchlistName("");
+      setWatchlistError(null);
+    } catch (error) {
+      setWatchlistError(error instanceof Error ? error.message : "Watchlist could not be created.");
+    } finally {
+      setWatchlistSaving(false);
+    }
+  };
+
+  const saveWatchlistName = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (activeWatchlistId === null || !watchlistRename.trim()) return;
+    setWatchlistSaving(true);
+    try {
+      const updated = await renameWatchlist(activeWatchlistId, watchlistRename.trim());
+      setWatchlists((items) => items.map((item) => item.id === updated.id ? updated : item));
+      setWatchlistError(null);
+    } catch (error) {
+      setWatchlistError(error instanceof Error ? error.message : "Watchlist name was not saved.");
+    } finally {
+      setWatchlistSaving(false);
+    }
+  };
+
+  const removeWatchlist = async () => {
+    if (activeWatchlistId === null) return;
+    setWatchlistSaving(true);
+    try {
+      await deleteWatchlist(activeWatchlistId);
+      const remaining = watchlists.filter((item) => item.id !== activeWatchlistId);
+      setWatchlists(remaining);
+      setActiveWatchlistId(remaining[0]?.id ?? null);
+      setWatchlistRename(remaining[0]?.name ?? "");
+      setWatchlistError(null);
+    } catch (error) {
+      setWatchlistError(error instanceof Error ? error.message : "Watchlist could not be deleted.");
+    } finally {
+      setWatchlistSaving(false);
+    }
   };
 
   const manualQuoteRefresh = async () => {
     if (!selected) return;
+    const instrumentKey = selected.instrument_key;
+    const requestRevision = ++quoteRequestRevision.current;
+    manualQuoteControllerRef.current?.abort();
+    const controller = new AbortController();
+    manualQuoteControllerRef.current = controller;
     setQuoteLoading(true);
     try {
-      setSelectedQuote((await fetchInstrumentQuote(selected.instrument_key)).quote);
+      const response = await fetchInstrumentQuote(instrumentKey, controller.signal);
+      if (quoteRequestRevision.current !== requestRevision || selectedInstrumentKeyRef.current !== instrumentKey) return;
+      setSelectedQuote(response.quote);
       setQuoteError(null);
     } catch (error) {
-      setQuoteError(error instanceof Error ? error.message : "Quote refresh failed.");
-    } finally { setQuoteLoading(false); }
+      if (!controller.signal.aborted && quoteRequestRevision.current === requestRevision && selectedInstrumentKeyRef.current === instrumentKey) {
+        setQuoteError(error instanceof Error ? error.message : "Quote refresh failed.");
+      }
+    } finally {
+      if (manualQuoteControllerRef.current === controller) manualQuoteControllerRef.current = null;
+      if (!controller.signal.aborted && quoteRequestRevision.current === requestRevision && selectedInstrumentKeyRef.current === instrumentKey) {
+        setQuoteLoading(false);
+      }
+    }
   };
 
   const handleSearchKey = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -306,6 +458,7 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
               ref={inputRef} value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }}
               onKeyDown={handleSearchKey} role="combobox" aria-expanded={results.length > 0}
               aria-controls="instrument-results" aria-autocomplete="list"
+              aria-activedescendant={activeIndex >= 0 ? `instrument-option-${activeIndex}` : undefined}
               placeholder="Company name, symbol, or ISIN" autoComplete="off"
               className="w-full rounded-xl border border-line bg-[#0B1017] py-3 pl-10 pr-10 text-sm text-white outline-none placeholder:text-muted focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
             />
@@ -323,12 +476,12 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
         {results.length ? (
           <div id="instrument-results" role="listbox" aria-label="Matching NSE and BSE equity instruments" className="mt-4 divide-y divide-line overflow-hidden rounded-xl border border-line">
             {results.map((instrument, index) => (
-              <div key={instrument.instrument_key} role="option" aria-selected={activeIndex === index} onMouseEnter={() => setActiveIndex(index)} className={`flex flex-wrap items-center gap-3 px-4 py-3 ${activeIndex === index ? "bg-accent/5" : "bg-[#0B1017]/70"}`}>
+              <div key={instrument.instrument_key} id={`instrument-option-${index}`} role="option" aria-selected={activeIndex === index} onMouseEnter={() => setActiveIndex(index)} className={`flex flex-wrap items-center gap-3 px-4 py-3 ${activeIndex === index ? "bg-accent/5" : "bg-[#0B1017]/70"}`}>
                 <button type="button" onClick={() => chooseInstrument(instrument)} className="min-w-0 flex-1 text-left focus:outline-none focus:ring-2 focus:ring-accent/50">
                   <span className="block truncate text-sm font-medium text-white">{instrument.name}</span>
                   <span className="mt-1 block truncate text-[11px] text-muted">{instrument.trading_symbol} · {instrument.exchange} · {instrument.segment} · {instrument.instrument_type}{instrument.isin ? ` · ${instrument.isin}` : ""}</span>
                 </button>
-                <button type="button" onClick={() => toggleWatchlist(instrument)} aria-label={watchlistKeys.has(instrument.instrument_key) ? "Remove from watchlist" : "Add to watchlist"} className="rounded-lg border border-line p-2 text-muted hover:text-accent">{watchlistKeys.has(instrument.instrument_key) ? <Check size={15} /> : <Plus size={15} />}</button>
+                <button type="button" disabled={!watchlistReady || watchlistSaving} onClick={() => void toggleWatchlist(instrument)} aria-label={watchlistKeys.has(instrument.instrument_key) ? "Remove from watchlist" : "Add to watchlist"} className="rounded-lg border border-line p-2 text-muted hover:text-accent disabled:opacity-40">{watchlistKeys.has(instrument.instrument_key) ? <Check size={15} /> : <Plus size={15} />}</button>
               </div>
             ))}
           </div>
@@ -342,34 +495,63 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
         ) : null}
       </div>
 
-      {watchlist.length ? (
-        <div className="rounded-2xl border border-line bg-panel/70 p-5 sm:p-7">
-          <div className="flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-medium text-white"><Star size={15} className="text-accent" /> Watchlist</h3><span className="text-[10px] text-muted">Instrument identities saved on this device</span></div>
-          {watchlistError ? <p role="status" className="mt-3 text-xs text-amber-200">{watchlistError}</p> : null}
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {watchlist.map((instrument) => {
-              const quote = watchlistQuotes[instrument.instrument_key];
-              return <div key={instrument.instrument_key} className="flex items-center gap-2 rounded-xl border border-line bg-[#0B1017]/70 p-3">
-                <button type="button" onClick={() => chooseInstrument(instrument)} className="min-w-0 flex-1 text-left"><span className="block truncate text-xs font-medium text-white">{instrument.trading_symbol} · {instrument.exchange}</span><span className={`mt-1 block text-[10px] ${quoteTint(quote)}`}>{quote ? `${money(quote.last_price)} · ${freshness(quote)} · ${formatTime(quote.fetched_at)}` : "Quote unavailable"}</span></button>
-                <button type="button" aria-label={`Remove ${instrument.trading_symbol} from watchlist`} onClick={() => toggleWatchlist(instrument)} className="rounded-lg p-2 text-muted hover:text-rose-200"><Trash2 size={14} /></button>
-              </div>;
-            })}
+      <div className="rounded-2xl border border-line bg-panel/70 p-5 sm:p-7">
+        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="flex items-center gap-2 text-sm font-medium text-white"><Star size={15} className="text-accent" /> Server watchlists</h3><span className="text-[10px] text-muted">Single-user development scope · saved by Core API</span></div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <form onSubmit={createNewWatchlist} className="flex gap-2">
+            <label className="sr-only" htmlFor="new-watchlist-name">New watchlist name</label>
+            <input id="new-watchlist-name" value={watchlistName} onChange={(event) => setWatchlistName(event.target.value)} maxLength={50} placeholder="New watchlist name" className="min-w-0 flex-1 rounded-lg border border-line bg-[#0B1017] px-3 py-2 text-xs text-white" />
+            <button type="submit" disabled={watchlistSaving || !watchlistName.trim()} className="rounded-lg border border-line px-3 py-2 text-xs text-white disabled:opacity-40">Create</button>
+          </form>
+          <label className="flex items-center gap-2 text-xs text-muted">Active list
+            <select aria-label="Active watchlist" value={activeWatchlistId ?? ""} onChange={(event) => {
+              const id = Number(event.target.value);
+              setActiveWatchlistId(Number.isFinite(id) && id > 0 ? id : null);
+              setWatchlistRename(watchlists.find((item) => item.id === id)?.name ?? "");
+            }} className="min-w-0 flex-1 rounded-lg border border-line bg-[#0B1017] px-3 py-2 text-xs text-white">
+              <option value="">Choose a saved watchlist</option>
+              {watchlists.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <div className="flex gap-2">
+            <form onSubmit={saveWatchlistName} className="flex min-w-0 flex-1 gap-2">
+              <label className="sr-only" htmlFor="rename-watchlist">Rename active watchlist</label>
+              <input id="rename-watchlist" value={watchlistRename} onChange={(event) => setWatchlistRename(event.target.value)} maxLength={50} placeholder="Rename active list" disabled={activeWatchlistId === null} className="min-w-0 flex-1 rounded-lg border border-line bg-[#0B1017] px-3 py-2 text-xs text-white disabled:opacity-40" />
+              <button type="submit" disabled={watchlistSaving || activeWatchlistId === null || !watchlistRename.trim()} className="rounded-lg border border-line px-3 py-2 text-xs text-white disabled:opacity-40">Rename</button>
+            </form>
+            <button type="button" onClick={() => void removeWatchlist()} disabled={watchlistSaving || activeWatchlistId === null} className="rounded-lg border border-line px-3 py-2 text-xs text-rose-200 disabled:opacity-40">Delete</button>
           </div>
         </div>
-      ) : null}
+        {watchlistError ? <p role="status" className="mt-3 text-xs text-amber-200">{watchlistError}</p> : null}
+        {watchlistQuoteError ? <p role="status" className="mt-2 text-xs text-amber-200">{watchlistQuoteError}</p> : null}
+        {!watchlistReady ? <p role="status" className="mt-4 text-xs text-muted">Loading saved watchlists…</p> : null}
+        {watchlistReady && !watchlistError && !watchlists.length ? <p className="mt-4 text-xs text-muted">Create a list to save instruments on the server.</p> : null}
+        {watchlistReady && activeWatchlistId !== null && !watchlist.length ? <p className="mt-4 text-xs text-muted">This saved watchlist has no instruments yet.</p> : null}
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {watchlist.map((instrument) => {
+            const quote = watchlistQuotes[instrument.instrument_key];
+            return <div key={instrument.instrument_key} className="flex items-center gap-2 rounded-xl border border-line bg-[#0B1017]/70 p-3">
+              <button type="button" onClick={() => chooseInstrument(instrument)} className="min-w-0 flex-1 text-left"><span className="block truncate text-xs font-medium text-white">{instrument.trading_symbol} · {instrument.exchange}</span><span className={`mt-1 block text-[10px] ${quoteTint(quote)}`}>{quote ? `${money(quote.last_price)} · ${freshness(quote)}` : "Quote unavailable"}</span><span className="mt-1 block truncate text-[9px] text-muted">{quote ? `${quote.source} · source ${formatTime(quote.source_timestamp)} · fetched ${formatTime(quote.fetched_at)}` : "No provider quote timestamp"}</span></button>
+              <button type="button" disabled={watchlistSaving} aria-label={`Remove ${instrument.trading_symbol} from watchlist`} onClick={() => void toggleWatchlist(instrument)} className="rounded-lg p-2 text-muted hover:text-rose-200 disabled:opacity-40"><Trash2 size={14} /></button>
+            </div>;
+          })}
+        </div>
+      </div>
 
       {selected ? (
         <div className="space-y-4 rounded-2xl border border-line bg-panel/70 p-5 sm:p-7" aria-labelledby="selected-stock-title">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><div className="text-[10px] uppercase tracking-[0.2em] text-accent">{selected.exchange} · {selected.segment} · {selected.instrument_key}</div><h3 id="selected-stock-title" className="mt-2 text-2xl font-medium text-white">{selected.name}</h3><p className="mt-1 text-xs text-muted">{selected.trading_symbol}{selected.isin ? ` · ISIN ${selected.isin}` : ""} · Source Upstox</p></div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => toggleWatchlist(selected)} className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-slate-200 hover:border-accent/50"><Star size={13} />{watchlistKeys.has(selected.instrument_key) ? "Remove watchlist" : "Add to watchlist"}</button>
+              <button type="button" disabled={!watchlistReady || watchlistSaving} onClick={() => void toggleWatchlist(selected)} className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-slate-200 hover:border-accent/50 disabled:opacity-40"><Star size={13} />{watchlistKeys.has(selected.instrument_key) ? "Remove watchlist" : "Add to watchlist"}</button>
               <button type="button" onClick={() => void manualQuoteRefresh()} disabled={quoteLoading} className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-slate-200 hover:border-accent/50 disabled:opacity-50"><RefreshCw size={13} className={quoteLoading ? "animate-spin" : ""} />Refresh quote</button>
               <button type="button" onClick={() => setSelected(null)} className="rounded-lg border border-line p-2 text-muted hover:text-white" aria-label="Close stock detail"><X size={15} /></button>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-[11px]">
-            <span className={`inline-flex items-center gap-1.5 ${streamState === "streaming" ? "text-accent" : "text-muted"}`}>{["streaming", "connected"].includes(streamState) ? <Wifi size={13} /> : <WifiOff size={13} />}{streamState === "streaming" ? "Live feed update received" : streamState === "connected" ? "Feed connected · awaiting provider tick" : streamState === "connecting" || streamState === "reconnecting" ? `Feed ${streamState}` : "Live feed unavailable · REST snapshot fallback"}</span>
+            <span className={`inline-flex items-center gap-1.5 ${streamState === "streaming" ? "text-accent" : "text-muted"}`}>{["streaming", "connected"].includes(streamState) ? <Wifi size={13} /> : <WifiOff size={13} />}{streamState === "streaming" ? "Streaming connection" : streamState === "connected" ? "Feed connected · awaiting provider tick" : streamState === "connecting" || streamState === "reconnecting" ? `Feed ${streamState}` : streamConfigured === false ? "Live feed credentials unavailable · REST snapshot fallback" : streamState === "unauthorized" ? "Feed unauthorized · REST snapshot fallback" : streamState === "disconnected" ? "Feed disconnected · REST snapshot fallback" : "Live feed unavailable · REST snapshot fallback"}</span>
+            <span className="text-muted">Displayed quote: {selectedQuote?.delivery === "stream" ? "Streaming" : selectedQuote ? "REST snapshot" : "Unavailable"}</span>
+            <span className="text-muted"><Clock3 size={12} className="mr-1 inline" />Last upstream message {formatAge(lastStreamMessageAt)}</span>
             <span className="text-muted"><Clock3 size={12} className="mr-1 inline" />Fetched {selectedQuote ? formatTime(selectedQuote.fetched_at) : "—"}</span>
             <span className={`rounded-full border border-line px-2 py-1 ${quoteTint(selectedQuote ?? undefined)}`}>{freshness(selectedQuote ?? undefined)}</span>
           </div>
@@ -378,9 +560,24 @@ export default function StockDiscovery({ streamConfigured }: { streamConfigured:
             <div className="rounded-xl border border-line bg-[#0B1017] p-4"><div className="text-[10px] uppercase text-muted">Last traded price · {selectedQuote?.source ?? "Upstox"}</div><div className="mt-2 text-2xl text-white">{money(selectedQuote?.last_price)}</div><div className={`mt-1 text-xs ${selectedQuote?.change !== null && selectedQuote?.change !== undefined && selectedQuote.change < 0 ? "text-rose-200" : "text-accent"}`}>{selectedQuote?.change !== null && selectedQuote?.change !== undefined ? `${selectedQuote.change > 0 ? "+" : ""}${money(selectedQuote.change)} (${selectedQuote.change_percent === null ? "—" : `${selectedQuote.change_percent.toFixed(2)}%`})` : "Change unavailable"}</div></div>
             {quoteStats.map(([label, value]) => <div key={label} className="rounded-xl border border-line bg-[#0B1017] p-4"><div className="text-[10px] uppercase text-muted">{label}</div><div className="mt-2 text-xl text-white">{value}</div></div>)}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="text-sm font-medium text-white">Historical daily closes</h4><p className="mt-1 text-[10px] text-muted">Upstox V3 candles · {historyRange} range · Fetched {candles.length ? formatTime(candles[candles.length - 1].timestamp) : "—"}</p></div><div className="flex items-center gap-3"><label htmlFor="stock-history-range" className="text-[10px] text-muted">Time range</label><select id="stock-history-range" value={historyRange} onChange={(event) => setHistoryRange(event.target.value as "1M" | "3M" | "1Y" | "5Y")} className="rounded-lg border border-line bg-[#0B1017] px-2 py-1.5 text-xs text-slate-200"><option value="1M">1 month</option><option value="3M">3 months</option><option value="1Y">1 year</option><option value="5Y">5 years</option></select><span className="text-[10px] text-muted">{historyLoading ? "Loading…" : `${candles.length} candles`}</span></div></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="text-sm font-medium text-white">Historical daily closes</h4><p className="mt-1 text-[10px] text-muted">Upstox V3 candles · {historyRange} range · Retrieved {formatTime(historyFetchedAt)}{candles.length ? ` · Latest candle ${formatTime(candles[candles.length - 1].timestamp)}` : ""}</p></div><div className="flex items-center gap-3"><label htmlFor="stock-history-range" className="text-[10px] text-muted">Time range</label><select id="stock-history-range" value={historyRange} onChange={(event) => setHistoryRange(event.target.value as "1M" | "3M" | "1Y" | "5Y")} className="rounded-lg border border-line bg-[#0B1017] px-2 py-1.5 text-xs text-slate-200"><option value="1M">1 month</option><option value="3M">3 months</option><option value="1Y">1 year</option><option value="5Y">5 years</option></select><span className="text-[10px] text-muted">{historyLoading ? "Loading…" : `${candles.length} candles`}</span></div></div>
           {historyError ? <div role="status" className="rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 text-xs text-amber-100">{historyError}</div> : null}
           <PriceChart candles={candles} />
+          <div className="rounded-xl border border-line bg-[#0B1017] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-medium text-slate-200">Technical indicators</h4>
+              <span className="text-[10px] text-muted">{technicalIndicators?.input_candle_count ?? 0} verified candles · calculated on backend</span>
+            </div>
+            {technicalIndicators?.status === "available" ? (
+              <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 xl:grid-cols-5">
+                {[["SMA 10", "sma_10"], ["SMA 20", "sma_20"], ["SMA 50", "sma_50"], ["SMA 100", "sma_100"], ["SMA 200", "sma_200"], ["EMA 9", "ema_9"], ["EMA 12", "ema_12"], ["EMA 20", "ema_20"], ["EMA 26", "ema_26"], ["EMA 50", "ema_50"], ["RSI 14", "rsi_14"], ["MACD 12/26/9", "macd"], ["MACD signal", "macd_signal"], ["ATR 14", "atr_14"], ["Bollinger upper", "bollinger_upper_20_2"], ["Bollinger middle", "bollinger_middle_20"], ["Bollinger lower", "bollinger_lower_20_2"], ["Stochastic %K", "stochastic_k_14"], ["Stochastic %D", "stochastic_d_3"], ["ROC 12 (%)", "roc_12_percent"], ["Momentum 10", "momentum_10"], ["OBV", "obv"], ["ADX 14", "adx_14"], ["Session VWAP", "vwap_session"]].map(([label, key]) => {
+                  const value = technicalIndicators.values[key] ?? null;
+                  const unavailable = value === null ? key === "vwap_session" ? "Unavailable for daily candles" : "Insufficient history" : value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+                  return <div key={key}><div className="text-[10px] text-muted">{label}</div><div className="mt-1 font-medium text-slate-200">{unavailable}</div></div>;
+                })}
+              </div>
+            ) : <p className="mt-3 text-xs text-muted">Indicators are unavailable until the selected range provides enough valid candles.</p>}
+          </div>
           {selectedQuote?.source_timestamp ? <p className="text-[10px] text-muted">Quote source timestamp: {formatTime(selectedQuote.source_timestamp)} · Backend fetch: {formatTime(selectedQuote.fetched_at)}</p> : null}
         </div>
       ) : null}

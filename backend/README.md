@@ -57,19 +57,33 @@ compressed complete instrument master when search is unavailable. Search
 results exclude debt and fund instrument series. Selected stocks use the
 instrument key returned by Upstox for quotes and V3 historical candles. The
 Markets page offers 1-month, 3-month, 1-year, and 5-year daily-close ranges.
-The V3 streaming bridge decodes Upstox's published Protobuf schema and keeps a
-single upstream connection per Core process. Upstox rejected the configured
-Analytics Token for V3 feed authorization; live streaming therefore requires
-a separate `UPSTOX_ACCESS_TOKEN` OAuth access token. Core does not refresh or
-modify tokens. Without that variable, the UI reports the stream as unavailable
-and uses clearly labelled REST snapshot fallback.
+The V3 feed manager decodes Upstox's published Protobuf schema and shares one
+upstream connection across currently subscribed instruments and browser clients.
+Core tries `UPSTOX_ANALYTICS_TOKEN` first; a bounded live authorization check
+returned HTTP 200 with the current Analytics Token. If it is not configured,
+Core can use the optional `UPSTOX_ACCESS_TOKEN` OAuth fallback. The V3 API
+returns a camelCase `authorizedRedirectUri`; Core keeps that one-use URL in
+memory only and never returns it to browsers or logs. Core does not refresh or
+modify tokens. Feed status reports connection and receive timestamps separately
+from REST quote timestamps. When no token is configured or the feed is down,
+the UI uses clearly labelled REST snapshot fallback.
 
 ## Optional archive
 
-Set `DATABASE_URL` to a PostgreSQL connection URL to retain macro source
-observations, revisions, and source-check history. Without it, live macro
-fetching and dashboard history continue to work while archive-backed routes
-report that persistence is disabled.
+Set `DATABASE_URL` to the intended PostgreSQL connection URL to enable durable
+macro archives, the Upstox instrument catalogue, and historical candles. Apply
+the versioned, additive Alembic baseline from this directory with
+`python -m scripts.migrate`; the application also runs pending safe migrations
+on first storage use. It does not drop or reset existing tables. The storage
+status endpoint reports database connectivity and market-history sync
+separately. With no URL configured, live provider responses can still be shown,
+but history is explicitly marked as not persisted. Core never falls back to a
+temporary database. SQLite URLs are supported for isolated automated tests.
+
+Server-managed watchlists are currently restricted to `APP_ENV=development`
+and use one server-side local identity because this repository has no user
+authentication yet. Do not expose that development server to multiple users;
+multi-user access requires authentication and ownership enforcement first.
 
 ## Tests
 

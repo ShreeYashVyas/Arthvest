@@ -1,6 +1,10 @@
 """Tests for optional persistence, value revisions, and source-check tracking."""
 
 from app.services import observation_store as store
+from datetime import date, datetime, timezone
+from contextlib import contextmanager
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 
 
 def _points(september_value: float = 3.62) -> list[tuple[str, float]]:
@@ -19,6 +23,64 @@ def test_storage_is_explicitly_disabled_without_database_url(monkeypatch) -> Non
     assert result["available"] is False
     assert result["backend"] == "disabled"
     assert result["observation_count"] == 0
+    assert result["database_status"] == "configuration_missing"
+    assert result["market_history_status"] == "initial_sync_pending"
+
+
+def test_storage_status_reports_invalid_database_configuration_safely(monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "not a valid sqlalchemy url")
+    result = store.get_storage_summary()
+    assert result["database_status"] == "configuration_invalid"
+    assert result["available"] is False
+    assert "not a valid sqlalchemy url" not in result["note"]
+
+
+def test_storage_status_reports_unreachable_sqlite_location(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'missing-dir' / 'database.db'}")
+    result = store.get_storage_summary()
+    assert result["database_status"] == "disconnected"
+    assert result["available"] is False
+
+
+def test_storage_status_distinguishes_postgres_authentication_failure(monkeypatch) -> None:
+    class PostgresAuthError(Exception):
+        sqlstate = "28P01"
+
+    class FailedEngine:
+        @contextmanager
+        def connect(self):
+            raise OperationalError("connect", {}, PostgresAuthError())
+            yield  # pragma: no cover
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://local@127.0.0.1/arthvest")
+    monkeypatch.setattr(store, "_engine", lambda _url: FailedEngine())
+
+    result = store.get_storage_summary()
+    assert result["database_status"] == "authentication_failure"
+    assert result["available"] is False
+    assert "password" not in result["note"].lower()
+
+
+def test_additive_alembic_baseline_preserves_existing_rows_and_is_repeatable(monkeypatch, tmp_path):
+    url = f"sqlite:///{tmp_path / 'preexisting.db'}"
+    engine = store._engine(url)
+    store.MacroSourceObservation.__table__.create(engine)
+    with Session(engine) as session, session.begin():
+        session.add(store.MacroSourceObservation(
+            series_id="PRESERVED", observation_date=date(2026, 10, 1), source_value=1.25,
+            first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+            last_changed_at=datetime.now(timezone.utc),
+        ))
+    monkeypatch.setenv("DATABASE_URL", url)
+
+    assert store.initialize_storage()
+    assert store.initialize_storage()
+    with Session(engine) as session:
+        assert session.query(store.MacroSourceObservation).filter_by(series_id="PRESERVED").count() == 1
+        assert session.get(store.ArthvestSchemaVersion, 1).version == store.SCHEMA_VERSION
+    with engine.connect() as connection:
+        revision = connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one()
+    assert revision == "0002_local_watchlists"
 
 
 def test_archive_is_idempotent_and_detects_upstream_revisions(monkeypatch, tmp_path) -> None:
@@ -36,6 +98,9 @@ def test_archive_is_idempotent_and_detects_upstream_revisions(monkeypatch, tmp_p
     assert summary_before_revision["observation_count"] == 2
     assert summary_before_revision["revision_count"] == 0
     assert summary_before_revision["source_check_count"] == 2
+    assert summary_before_revision["database_status"] == "connected"
+    assert summary_before_revision["schema_status"] == "current"
+    assert summary_before_revision["schema_version"] == store.SCHEMA_VERSION
 
     store.record_source_success(
         "fed-funds", "FEDFUNDS", _points(3.60), "2026-10-23T10:30:00+00:00", 42

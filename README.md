@@ -102,7 +102,7 @@ Live fetching works without a database. To retain source observations, detect up
 
 ## Market data
 
-The Markets page reads normalized quotes from the backend (`GET /api/market/quotes`) and identifies the source and provider timestamp. It also searches Upstox's NSE/BSE equity instruments, fetches selected-stock quotes and historical candles, and keeps a local watchlist. `MARKET_DATA_PROVIDER=auto|upstox|yahoo` selects the index-quote provider; auto uses Upstox when `UPSTOX_ANALYTICS_TOKEN` is configured and otherwise selects best-effort Yahoo chart data. Yahoo quotes can be delayed or stale. The live Upstox V3 stream requires a separate OAuth `UPSTOX_ACCESS_TOKEN`; the Analytics Token is not authorized for that feed. The UI labels REST fallback accurately and shows no sample quote or chart data.
+The Markets page reads normalized quotes from the backend (`GET /api/market/quotes`) and identifies the source and provider timestamp. It also searches Upstox's NSE/BSE equity instruments, fetches selected-stock quotes and historical candles, and keeps a local watchlist. `MARKET_DATA_PROVIDER=auto|upstox|yahoo` selects the index-quote provider; auto uses Upstox when `UPSTOX_ANALYTICS_TOKEN` is configured and otherwise selects best-effort Yahoo chart data. Yahoo quotes can be delayed or stale. The V3 stream manager uses `UPSTOX_ANALYTICS_TOKEN` first for feed authorization and supports `UPSTOX_ACCESS_TOKEN` as an OAuth fallback. It multiplexes current instrument subscriptions over one backend connection; the UI labels REST fallback when no feed is available.
 
 For Upstox, generate a read-only Analytics Token in the [Upstox Developer Apps portal](https://account.upstox.com/developer/apps) and set it as `UPSTOX_ANALYTICS_TOKEN` in `backend/.env`. The credential stays on the backend and is never returned by Arthvest endpoints or sent to the browser. An API key/client ID and client secret by themselves do not authenticate quote requests; the alternative OAuth flow must first exchange an authorization code for an access token. See [Upstox Analytics Token documentation](https://upstox.com/developer/api-documentation/analytics-token/), the [authentication guide](https://upstox.com/developer/api-documentation/authentication/), and the [Full Market Quotes API](https://upstox.com/developer/api-documentation/get-full-market-quote/).
 
@@ -129,7 +129,7 @@ The optional archive can power a descriptive analytics endpoint such as `/api/ma
 | `GET /api/market/instruments/search?q=...&exchange=ALL` | Paginated Upstox NSE/BSE equity search |
 | `GET /api/market/instruments/{instrument_key}/quote` | Real selected-equity snapshot from Upstox |
 | `GET /api/market/instruments/{instrument_key}/history` | Upstox V3 historical candles |
-| `WS /api/market/stream/{instrument_key}` | Upstox V3 Protobuf stream (requires `UPSTOX_ACCESS_TOKEN`) |
+| `WS /api/market/stream/{instrument_key}` | Shared Upstox V3 Protobuf stream (Analytics Token or OAuth fallback) |
 | `GET /api/macro/archive/{indicator_key}?limit=12` | Stored source-native observations (requires `DATABASE_URL`) |
 | `GET /api/macro/revisions/{indicator_key}?limit=20` | Detected upstream value revisions (requires `DATABASE_URL`) |
 | `GET /api/macro/source-checks?limit=24` | Recent persisted source fetch outcomes (requires `DATABASE_URL`)

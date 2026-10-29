@@ -5,11 +5,13 @@ from __future__ import annotations
 import os
 from datetime import date, datetime, timezone
 from functools import lru_cache
+from pathlib import Path
 from threading import Lock
 from typing import Any, Iterable
 
-from sqlalchemy import Date, DateTime, Float, Index, Integer, String, UniqueConstraint, create_engine, func, select
-from sqlalchemy.engine import Engine
+from sqlalchemy import Date, DateTime, Float, Index, Integer, String, UniqueConstraint, create_engine, func, inspect, select, text
+from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 
@@ -70,6 +72,19 @@ class MacroSourceCheck(Base):
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
 
+class ArthvestSchemaVersion(Base):
+    """Additive schema marker; existing data tables are never dropped or rewritten."""
+
+    __tablename__ = "arthvest_schema_version"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+SCHEMA_VERSION = 2
+
+
 class StorageDisabledError(RuntimeError):
     """Raised when persistence is requested without a configured database."""
 
@@ -95,12 +110,22 @@ def storage_is_configured() -> bool:
     return _database_url() is not None
 
 
+def _connection_failure(exc: Exception) -> tuple[str, str]:
+    original = getattr(exc, "orig", exc)
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    if isinstance(sqlstate, str) and sqlstate.startswith("28"):
+        return "authentication_failure", "Database connectivity: the configured database rejected authentication or authorization."
+    return "disconnected", "Database connectivity: configured server could not be reached or authenticated."
+
+
 @lru_cache(maxsize=8)
 def _engine(url: str) -> Engine:
     """Cache database connection pools; allow SQLite to be shared by test threads."""
-    options: dict[str, Any] = {"pool_pre_ping": True}
+    options: dict[str, Any] = {"pool_pre_ping": True, "pool_timeout": 10}
     if url.startswith("sqlite:"):
-        options["connect_args"] = {"check_same_thread": False, "timeout": 30}
+        options["connect_args"] = {"check_same_thread": False, "timeout": 5}
+    elif url.startswith(("postgresql:", "postgresql+psycopg:")):
+        options["connect_args"] = {"connect_timeout": 5}
     return create_engine(url, **options)
 
 
@@ -110,7 +135,31 @@ def _ensure_schema(url: str) -> None:
     with _schema_lock:
         if url in _initialized_urls:
             return
-        Base.metadata.create_all(_engine(url))
+        # Market models are imported lazily to avoid coupling macro startup to markets.
+        from alembic import command
+        from alembic.config import Config
+        from app.services import market_store  # noqa: F401
+
+        engine = _engine(url)
+        if inspect(engine).has_table(ArthvestSchemaVersion.__tablename__):
+            with Session(engine) as session:
+                current_version = session.scalar(
+                    select(ArthvestSchemaVersion.version).where(ArthvestSchemaVersion.id == 1)
+                )
+            if current_version is not None and current_version > SCHEMA_VERSION:
+                raise RuntimeError("Database schema version is newer than this application supports")
+        project_root = Path(__file__).resolve().parents[2]
+        migration_config = Config(str(project_root / "alembic.ini"))
+        with engine.begin() as connection:
+            migration_config.attributes["connection"] = connection
+            command.upgrade(migration_config, "head")
+        with Session(engine) as session, session.begin():
+            marker = session.get(ArthvestSchemaVersion, 1)
+            if marker is None:
+                session.add(ArthvestSchemaVersion(id=1, version=SCHEMA_VERSION, updated_at=datetime.now(timezone.utc)))
+            elif marker.version < SCHEMA_VERSION:
+                marker.version = SCHEMA_VERSION
+                marker.updated_at = datetime.now(timezone.utc)
         _initialized_urls.add(url)
 
 
@@ -228,11 +277,68 @@ def get_storage_summary() -> dict[str, Any]:
     if url is None:
         return {
             "enabled": False, "available": False, "backend": "disabled",
+            "database_status": "configuration_missing", "schema_status": "not_checked",
+            "schema_version": None,
             "observation_count": 0, "revision_count": 0, "source_check_count": 0,
             "last_check_at": None,
-            "note": "DATABASE_URL is not configured; live fetching continues without persistence.",
+            "market_history_status": "initial_sync_pending", "instruments_tracked": 0,
+            "candles_by_interval": {}, "candle_count": 0,
+            "latest_stored_candle_at": None, "last_successful_sync_at": None,
+            "last_attempted_sync_at": None, "last_failure_category": None,
+            "coverage_start": None, "coverage_end": None, "latest_upstream_fetch_at": None,
+            "catalogue_sync_status": "never_synchronized", "catalogue_last_successful_sync_at": None,
+            "note": "Database connectivity: configuration missing. Set DATABASE_URL to enable persistent archives and market history.",
         }
     backend = url.split("://", 1)[0].split("+", 1)[0]
+    try:
+        make_url(url)
+        engine = _engine(url)
+    except (ArgumentError, ValueError):
+        return {
+            "enabled": True, "available": False, "backend": backend,
+            "database_status": "configuration_invalid", "schema_status": "not_checked",
+            "schema_version": None, "observation_count": None, "revision_count": None,
+            "source_check_count": None, "last_check_at": None,
+            "market_history_status": "initial_sync_pending", "instruments_tracked": None,
+            "candles_by_interval": {}, "candle_count": None,
+            "latest_stored_candle_at": None, "last_successful_sync_at": None,
+            "last_attempted_sync_at": None, "last_failure_category": None,
+            "coverage_start": None, "coverage_end": None, "latest_upstream_fetch_at": None,
+            "catalogue_sync_status": "never_synchronized", "catalogue_last_successful_sync_at": None,
+            "note": "Database connectivity: DATABASE_URL is invalid. Check its scheme and required connection fields.",
+        }
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except (SQLAlchemyError, OSError) as exc:
+        database_status, note = _connection_failure(exc)
+        return {
+            "enabled": True, "available": False, "backend": backend,
+            "database_status": database_status, "schema_status": "not_checked",
+            "schema_version": None, "observation_count": None, "revision_count": None,
+            "source_check_count": None, "last_check_at": None,
+            "market_history_status": "initial_sync_pending", "instruments_tracked": None,
+            "candles_by_interval": {}, "candle_count": None,
+            "latest_stored_candle_at": None, "last_successful_sync_at": None,
+            "last_attempted_sync_at": None, "last_failure_category": None,
+            "coverage_start": None, "coverage_end": None, "latest_upstream_fetch_at": None,
+            "catalogue_sync_status": "never_synchronized", "catalogue_last_successful_sync_at": None,
+            "note": note,
+        }
+    except Exception:
+        return {
+            "enabled": True, "available": False, "backend": backend,
+            "database_status": "configuration_invalid", "schema_status": "not_checked",
+            "schema_version": None, "observation_count": None, "revision_count": None,
+            "source_check_count": None, "last_check_at": None,
+            "market_history_status": "initial_sync_pending", "instruments_tracked": None,
+            "candles_by_interval": {}, "candle_count": None,
+            "latest_stored_candle_at": None, "last_successful_sync_at": None,
+            "last_attempted_sync_at": None, "last_failure_category": None,
+            "coverage_start": None, "coverage_end": None, "latest_upstream_fetch_at": None,
+            "catalogue_sync_status": "never_synchronized", "catalogue_last_successful_sync_at": None,
+            "note": "Database connectivity: configuration could not be validated.",
+        }
     try:
         _ensure_schema(url)
         with Session(_engine(url)) as session:
@@ -242,18 +348,31 @@ def get_storage_summary() -> dict[str, Any]:
             last = session.scalar(
                 select(MacroSourceCheck.checked_at).order_by(MacroSourceCheck.id.desc()).limit(1)
             )
+            schema_version = session.scalar(select(ArthvestSchemaVersion.version).where(ArthvestSchemaVersion.id == 1))
+        from app.services import market_store
+        market_summary = market_store.global_history_summary()
         return {
             "enabled": True, "available": True, "backend": backend,
+            "database_status": "connected", "schema_status": "current",
+            "schema_version": schema_version,
             "observation_count": observations, "revision_count": revisions,
             "source_check_count": checks, "last_check_at": last.isoformat() if last else None,
-            "note": "Source observations and revisions are being archived in the configured database.",
+            **market_summary,
+            "note": "Database connectivity: connected; schema is current. Market-history synchronization is reported separately.",
         }
     except Exception:
         return {
             "enabled": True, "available": False, "backend": backend,
-            "observation_count": None, "revision_count": None, "source_check_count": None,
-            "last_check_at": None,
-            "note": "DATABASE_URL is configured, but the persistence store could not be reached.",
+            "database_status": "schema_error", "schema_status": "error",
+            "schema_version": None, "observation_count": None, "revision_count": None,
+            "source_check_count": None, "last_check_at": None,
+            "market_history_status": "initial_sync_pending", "instruments_tracked": None,
+            "candles_by_interval": {}, "candle_count": None,
+            "latest_stored_candle_at": None, "last_successful_sync_at": None,
+            "last_attempted_sync_at": None, "last_failure_category": None,
+            "coverage_start": None, "coverage_end": None, "latest_upstream_fetch_at": None,
+            "catalogue_sync_status": "never_synchronized", "catalogue_last_successful_sync_at": None,
+            "note": "Database is reachable, but the Arthvest schema could not be initialized or queried.",
         }
 
 

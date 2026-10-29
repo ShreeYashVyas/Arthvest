@@ -56,13 +56,18 @@ def _market_feed_access_token() -> str:
     return os.getenv("UPSTOX_ACCESS_TOKEN", "").strip()
 
 
+def _market_feed_token() -> str:
+    """Prefer the configured Analytics Token, with OAuth as a separate fallback."""
+    return _analytics_token() or _market_feed_access_token()
+
+
 def get_upstox_status() -> dict[str, object]:
     """Report configuration readiness without disclosing any credential."""
     configured = bool(_analytics_token())
     return {
         "provider": "Upstox",
         "configured": configured,
-        "stream_configured": bool(_market_feed_access_token()),
+        "stream_configured": bool(_market_feed_token()),
         "auth_mode": "Analytics Token (read-only)" if configured else None,
         "note": (
             "An Analytics Token is configured. Market quotes are fetched from Upstox on request."
@@ -156,17 +161,17 @@ def _finite_number(value: object) -> float | None:
 
 
 def _quote_timestamp(quote: dict[str, object]) -> str | None:
-    """Normalize the quote timestamp where the provider supplies one."""
-    value = quote.get("timestamp")
-    if isinstance(value, str) and value.strip():
-        return value
+    """Prefer the actual last-trade time for freshness; fall back to quote time."""
     trade_time = quote.get("last_trade_time")
     if isinstance(trade_time, (str, int, float)) and not isinstance(trade_time, bool):
         try:
             milliseconds = int(trade_time)
             return datetime.fromtimestamp(milliseconds / 1000, timezone.utc).isoformat()
         except (ValueError, TypeError, OverflowError, OSError):
-            return None
+            pass
+    value = quote.get("timestamp")
+    if isinstance(value, str) and value.strip():
+        return value
     return None
 
 
@@ -332,13 +337,17 @@ def get_historical_candles(
 
 
 def get_market_feed_authorized_url() -> str:
-    """Fetch the one-time authorized V3 websocket URL without logging or returning it to clients."""
-    token = _market_feed_access_token()
+    """Fetch the one-time authorized V3 URL without logging or returning it to clients."""
+    token = _market_feed_token()
     if not token:
-        raise UpstoxServiceError("Live streaming requires an UPSTOX_ACCESS_TOKEN OAuth access token; the Analytics Token is not authorized for the V3 feed.", 503)
+        raise UpstoxServiceError("Live streaming requires UPSTOX_ANALYTICS_TOKEN or UPSTOX_ACCESS_TOKEN.", 503)
     request = Request(
         MARKET_FEED_AUTHORIZE_URL,
-        headers={"Accept": "application/json", "Authorization": "Bearer " + token},
+        headers={
+            "Accept": "application/json",
+            "Authorization": "Bearer " + token,
+            "User-Agent": "Arthvest/0.3 market feed",
+        },
         method="GET",
     )
     try:
@@ -356,10 +365,10 @@ def get_market_feed_authorized_url() -> str:
         raise UpstoxServiceError("Upstox live-feed authorization timed out." if status == 504 else "Could not reach Upstox live-feed authorization.", status) from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UpstoxServiceError("Upstox returned malformed live-feed authorization data.", 502) from exc
-    try:
-        uri = payload["data"]["authorized_redirect_uri"]
-    except (KeyError, TypeError) as exc:
-        raise UpstoxServiceError("Upstox omitted the authorized live-feed URL.", 502) from exc
+    data = payload.get("data")
+    uri = data.get("authorizedRedirectUri", data.get("authorized_redirect_uri")) if isinstance(data, dict) else None
+    if not isinstance(uri, str):
+        raise UpstoxServiceError("Upstox omitted the authorized live-feed URL.", 502)
     if payload.get("status") != "success" or not isinstance(uri, str) or not uri.startswith("wss://"):
         raise UpstoxServiceError("Upstox returned an invalid authorized live-feed URL.", 502)
     return uri

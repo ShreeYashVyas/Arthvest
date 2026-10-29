@@ -693,6 +693,22 @@ export type MacroStorageStatus = {
   revision_count: number | null;
   source_check_count: number | null;
   last_check_at: string | null;
+  database_status: "connected" | "disconnected" | "authentication_failure" | "configuration_missing" | "configuration_invalid" | "schema_error";
+  schema_status: "current" | "not_checked" | "error";
+  schema_version: number | null;
+  market_history_status: "never_synchronized" | "initial_sync_pending" | "synchronizing" | "synchronized" | "stale" | "synchronization_failed" | "partially_synchronized";
+  instruments_tracked: number | null;
+  candles_by_interval: Record<string, number>;
+  candle_count: number | null;
+  latest_stored_candle_at: string | null;
+  coverage_start: string | null;
+  coverage_end: string | null;
+  latest_upstream_fetch_at: string | null;
+  last_successful_sync_at: string | null;
+  last_attempted_sync_at: string | null;
+  last_failure_category: string | null;
+  catalogue_sync_status: string;
+  catalogue_last_successful_sync_at: string | null;
   note: string;
 };
 
@@ -725,6 +741,15 @@ function isMacroStorageStatus(value: unknown): value is MacroStorageStatus {
   return typeof data.enabled === "boolean" &&
     typeof data.available === "boolean" &&
     typeof data.backend === "string" &&
+    typeof data.database_status === "string" &&
+    typeof data.schema_status === "string" &&
+    typeof data.market_history_status === "string" &&
+    isNullableCount(data.schema_version) &&
+    isNullableCount(data.instruments_tracked) &&
+    isNullableCount(data.candle_count) &&
+    typeof data.candles_by_interval === "object" && data.candles_by_interval !== null &&
+    ["latest_stored_candle_at", "coverage_start", "coverage_end", "latest_upstream_fetch_at", "last_successful_sync_at", "last_attempted_sync_at", "last_failure_category", "catalogue_last_successful_sync_at"].every((key) => data[key] === null || typeof data[key] === "string") &&
+    typeof data.catalogue_sync_status === "string" &&
     isNullableCount(data.observation_count) &&
     isNullableCount(data.revision_count) &&
     isNullableCount(data.source_check_count) &&
@@ -879,6 +904,17 @@ export type MarketProviderStatus = {
   provider: string;
   configured: boolean;
   stream_configured: boolean;
+  connection_state: "connecting" | "connected" | "reconnecting" | "unauthorized" | "unavailable" | "disconnected";
+  last_authorized_at: string | null;
+  last_connected_at: string | null;
+  last_message_received_at: string | null;
+  last_tick_received_at: string | null;
+  last_source_timestamp: string | null;
+  upstream_message_count: number;
+  subscribed_instrument_count: number;
+  reconnect_attempts: number;
+  stream_error_category: string | null;
+  stream_failure_reason: string | null;
   note: string;
   cache_seconds: number;
   auto_refresh_seconds: number;
@@ -919,6 +955,16 @@ function isMarketProviderStatus(value: unknown): value is MarketProviderStatus {
   return ["auto", "upstox", "yahoo"].includes(String(data.provider_setting)) &&
     typeof data.provider === "string" && typeof data.configured === "boolean" &&
     typeof data.stream_configured === "boolean" &&
+    ["connecting", "connected", "reconnecting", "unauthorized", "unavailable", "disconnected"].includes(String(data.connection_state)) &&
+    (data.last_authorized_at === null || typeof data.last_authorized_at === "string") &&
+    (data.last_connected_at === null || typeof data.last_connected_at === "string") &&
+    (data.last_message_received_at === null || typeof data.last_message_received_at === "string") &&
+    (data.last_tick_received_at === null || typeof data.last_tick_received_at === "string") &&
+    (data.last_source_timestamp === null || typeof data.last_source_timestamp === "string") &&
+    typeof data.upstream_message_count === "number" &&
+    typeof data.subscribed_instrument_count === "number" && typeof data.reconnect_attempts === "number" &&
+    (data.stream_error_category === null || typeof data.stream_error_category === "string") &&
+    (data.stream_failure_reason === null || typeof data.stream_failure_reason === "string") &&
     typeof data.note === "string" && typeof data.cache_seconds === "number" &&
     typeof data.auto_refresh_seconds === "number";
 }
@@ -1009,6 +1055,61 @@ export type MarketInstrument = {
   catalogue_updated_at: string | null;
 };
 
+export type MarketWatchlist = {
+  id: number;
+  name: string;
+  created_at: string;
+  updated_at: string;
+  instruments: MarketInstrument[];
+};
+
+async function parseWatchlistResponse(response: Response): Promise<MarketWatchlist> {
+  if (!response.ok) throw await marketApiError(response, "Watchlist changes could not be saved.");
+  const payload: unknown = await response.json().catch(() => null);
+  if (typeof payload !== "object" || payload === null ||
+      typeof (payload as { id?: unknown }).id !== "number" ||
+      typeof (payload as { name?: unknown }).name !== "string" ||
+      !Array.isArray((payload as { instruments?: unknown }).instruments)) {
+    throw new Error("Watchlist API returned an unexpected response format.");
+  }
+  return payload as MarketWatchlist;
+}
+
+export async function fetchWatchlists(signal?: AbortSignal): Promise<MarketWatchlist[]> {
+  const response = await fetch(API_BASE_URL + "/api/watchlists", { cache: "no-store", signal });
+  if (!response.ok) throw await marketApiError(response, "Saved watchlists are unavailable.");
+  const payload: unknown = await response.json().catch(() => null);
+  if (typeof payload !== "object" || payload === null ||
+      !Array.isArray((payload as { watchlists?: unknown }).watchlists)) {
+    throw new Error("Watchlist API returned an unexpected response format.");
+  }
+  return (payload as { watchlists: MarketWatchlist[] }).watchlists;
+}
+
+export async function createWatchlist(name: string): Promise<MarketWatchlist> {
+  return parseWatchlistResponse(await fetch(API_BASE_URL + "/api/watchlists", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+  }));
+}
+
+export async function renameWatchlist(id: number, name: string): Promise<MarketWatchlist> {
+  return parseWatchlistResponse(await fetch(API_BASE_URL + "/api/watchlists/" + id, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+  }));
+}
+
+export async function deleteWatchlist(id: number): Promise<void> {
+  const response = await fetch(API_BASE_URL + "/api/watchlists/" + id, { method: "DELETE" });
+  if (!response.ok) throw await marketApiError(response, "The watchlist could not be deleted.");
+}
+
+export async function replaceWatchlistEntries(id: number, instrumentKeys: string[]): Promise<MarketWatchlist> {
+  return parseWatchlistResponse(await fetch(API_BASE_URL + "/api/watchlists/" + id + "/entries", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instrument_keys: instrumentKeys }),
+  }));
+}
+
 export type InstrumentSearchResponse = {
   query: string;
   exchange: "ALL" | "NSE" | "BSE";
@@ -1036,6 +1137,7 @@ export type MarketInstrumentQuote = {
   volume: number | null;
   currency: string | null;
   source: string;
+  delivery?: "stream" | "rest";
   source_timestamp: string | null;
   fetched_at: string;
   freshness: "fresh" | "stale" | "unknown";
@@ -1070,6 +1172,14 @@ export type MarketHistoryResponse = {
   to_date: string;
   fetched_at: string;
   candles: MarketCandle[];
+  technical_indicators?: {
+    status: "available" | "insufficient_history";
+    input_candle_count: number;
+    latest_candle_at: string | null;
+    source: string;
+    values: Record<string, number | null>;
+    periods: Record<string, number | number[]>;
+  };
 };
 
 export async function searchMarketInstruments(

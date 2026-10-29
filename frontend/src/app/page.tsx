@@ -735,11 +735,14 @@ export default function Home() {
                     </div>
                     <div>
                       <div className="text-sm font-medium text-white">
-                        {!storageStatus.enabled
-                          ? "Persistence disabled"
-                          : storageStatus.available
-                            ? "Database connected"
-                            : "Database unreachable"}
+                        {{
+                          connected: "Database connected",
+                          disconnected: "Database server unreachable",
+                          authentication_failure: "Database authentication failed",
+                          configuration_missing: "Database configuration missing",
+                          configuration_invalid: "Database configuration invalid",
+                          schema_error: "Database schema error",
+                        }[storageStatus.database_status]}
                       </div>
                       <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">{storageStatus.note}</p>
                     </div>
@@ -750,7 +753,14 @@ export default function Home() {
                       : storageStatus.available
                         ? "border-accent/25 bg-accent/5 text-accent"
                         : "border-amber-300/25 bg-amber-300/5 text-amber-200")}>
-                    {!storageStatus.enabled ? "Not configured" : storageStatus.available ? storageStatus.backend + " · online" : "Connection error"}
+                    {{
+                      connected: storageStatus.backend + " · online",
+                      disconnected: "Disconnected",
+                      authentication_failure: "Authentication failed",
+                      configuration_missing: "Not configured",
+                      configuration_invalid: "Invalid configuration",
+                      schema_error: "Schema error",
+                    }[storageStatus.database_status]}
                   </span>
                 </div>
 
@@ -773,6 +783,25 @@ export default function Home() {
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div className="mt-5 rounded-xl border border-line bg-[#0B1017] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-medium text-slate-200">Persistent market history</div>
+                      <div className="mt-1 text-xs text-muted">
+                        {storageStatus.instruments_tracked?.toLocaleString("en-US") ?? "—"} instruments · {storageStatus.candle_count?.toLocaleString("en-US") ?? "—"} candles · {storageStatus.market_history_status.replaceAll("_", " ")}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-muted">Schema {storageStatus.schema_version ?? "not initialized"} · catalogue {storageStatus.catalogue_sync_status.replaceAll("_", " ")}</span>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-[10px] text-muted sm:grid-cols-2">
+                    <div>Latest stored candle: {storageStatus.latest_stored_candle_at ? new Date(storageStatus.latest_stored_candle_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "none"}</div>
+                    <div>Latest upstream fetch: {storageStatus.latest_upstream_fetch_at ? new Date(storageStatus.latest_upstream_fetch_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "none"}</div>
+                    <div>Last successful sync: {storageStatus.last_successful_sync_at ? new Date(storageStatus.last_successful_sync_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "never"}</div>
+                    <div>Coverage: {storageStatus.coverage_start ? new Date(storageStatus.coverage_start).toLocaleDateString("en-IN") : "none"} – {storageStatus.coverage_end ? new Date(storageStatus.coverage_end).toLocaleDateString("en-IN") : "none"}</div>
+                  </div>
+                  {storageStatus.last_failure_category ? <p className="mt-2 text-[10px] text-amber-200">Last failure: {storageStatus.last_failure_category}</p> : null}
                 </div>
 
                 {archiveError ? (

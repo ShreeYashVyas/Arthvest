@@ -188,6 +188,10 @@ export default function MarketsPage() {
               <p className="mt-2 text-xs leading-5 text-muted">
                 {providerStatus?.note ?? "Checking the Arthvest market-data API."}
               </p>
+              <p className="mt-2 text-[11px] text-muted">
+                V3 feed: {!providerStatus ? "checking" : providerStatus.provider !== "Upstox" ? "not selected" : providerStatus.stream_configured ? providerStatus.connection_state : "credentials unavailable"}
+                {providerStatus?.stream_configured ? ` · ${providerStatus.subscribed_instrument_count} instruments · last tick ${formatTimestamp(providerStatus.last_tick_received_at)}` : " · REST snapshots remain available"}
+              </p>
               <p className="mt-2 text-[11px] text-muted">Automatic refresh every {refreshSeconds} seconds.</p>
             </div>
             <button

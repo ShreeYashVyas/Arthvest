@@ -3,27 +3,25 @@
 import asyncio
 import json
 import logging
-import uuid
 from datetime import date, timedelta
 from typing import Literal
 from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 
-from websockets.asyncio.client import connect as websocket_connect
-
-from app.services import instrument_catalog, market_data, market_stream, upstox_service
+from app.services import instrument_catalog, market_data, upstox_service
+from app.services.market_feed_manager import MarketFeedManagerError, UpstoxMarketFeedManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/market/upstox", tags=["market data"])
 market_data_router = APIRouter(prefix="/api/market", tags=["market data"])
-_STREAM_SLOT = asyncio.Semaphore(1)
+feed_manager = UpstoxMarketFeedManager()
 
 
-@market_data_router.get("/status", summary="Check the selected market-data provider")
-def get_market_data_status() -> dict[str, object]:
+@market_data_router.get("/status", summary="Check the selected market-data provider and live feed")
+async def get_market_data_status() -> dict[str, object]:
     try:
-        return market_data.get_market_data_status()
+        return {**market_data.get_market_data_status(), **feed_manager.status_snapshot()}
     except market_data.MarketDataError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -85,64 +83,60 @@ def get_instrument_history(
 
 @market_data_router.websocket("/stream/{instrument_key:path}")
 async def stream_instrument_quote(websocket: WebSocket, instrument_key: str) -> None:
-    """Bridge one selected instrument's Upstox V3 feed to a browser websocket."""
+    """Share selected-instrument updates from the process-wide Upstox V3 feed."""
     await websocket.accept()
     instrument_key = unquote(instrument_key)
-    upstream = None
-    acquired = False
-    upstream_task: asyncio.Task | None = None
+    queue: asyncio.Queue[dict[str, object]] | None = None
+    queue_task: asyncio.Task | None = None
     browser_task: asyncio.Task | None = None
     try:
         instrument = instrument_catalog.get_instrument(instrument_key)
         if market_data._selected_provider_name() != "upstox":
             raise market_data.MarketDataError("Live stock streaming requires Upstox to be selected.", 503)
-        try:
-            await asyncio.wait_for(_STREAM_SLOT.acquire(), timeout=2)
-            acquired = True
-        except TimeoutError as exc:
-            raise market_data.MarketDataError("The live-feed connection limit is currently in use.", 503) from exc
-        authorized_uri = await asyncio.to_thread(upstox_service.get_market_feed_authorized_url)
-        upstream = await websocket_connect(authorized_uri, open_timeout=10, ping_interval=20, max_size=1_000_000)
-        subscribe = {
-            "guid": uuid.uuid4().hex,
-            "method": "sub",
-            "data": {"mode": "ltpc", "instrumentKeys": [instrument_key]},
-        }
-        await upstream.send(json.dumps(subscribe).encode("utf-8"))
-        await websocket.send_json({"type": "connected", "provider": "Upstox Market Data Feed V3", "mode": "ltpc"})
-        upstream_task = asyncio.create_task(upstream.recv())
+        queue = await feed_manager.subscribe(instrument, mode="ltpc")
+        await websocket.send_json({
+            "type": "connected",
+            "state": feed_manager.connection_state,
+            "provider": "Upstox Market Data Feed V3",
+            "mode": "ltpc",
+        })
+        queue_task = asyncio.create_task(queue.get())
         browser_task = asyncio.create_task(websocket.receive())
         while True:
             done, _ = await asyncio.wait(
-                {upstream_task, browser_task}, return_when=asyncio.FIRST_COMPLETED
+                {queue_task, browser_task}, return_when=asyncio.FIRST_COMPLETED
             )
             if browser_task in done:
                 message = browser_task.result()
                 if message.get("type") == "websocket.disconnect":
                     break
                 if message.get("text") == "unsubscribe":
-                    await upstream.send(json.dumps({
-                        "guid": uuid.uuid4().hex,
-                        "method": "unsub",
-                        "data": {"mode": "ltpc", "instrumentKeys": [instrument_key]},
-                    }).encode("utf-8"))
                     break
-                browser_task = asyncio.create_task(websocket.receive())
-            if upstream_task in done:
-                payload = upstream_task.result()
-                if isinstance(payload, bytes):
+                if message.get("text"):
                     try:
-                        updates = market_stream.decode_market_feed(payload, instrument)
-                    except ValueError as exc:
-                        raise market_data.MarketDataError("Upstox sent a malformed live-feed update.", 502) from exc
-                    for update in updates:
-                        await websocket.send_json({"type": "quote", "quote": update})
-                upstream_task = asyncio.create_task(upstream.recv())
+                        command = json.loads(message["text"])
+                    except (TypeError, json.JSONDecodeError):
+                        command = None
+                    if isinstance(command, dict) and command.get("method") == "change_mode":
+                        mode = command.get("mode")
+                        if isinstance(mode, str):
+                            await feed_manager.change_mode(instrument_key, queue, mode)
+                            await websocket.send_json({"type": "mode", "mode": mode})
+                browser_task = asyncio.create_task(websocket.receive())
+            if queue_task in done:
+                event = queue_task.result()
+                if event.get("type") == "unavailable":
+                    await websocket.send_json(event)
+                    break
+                await websocket.send_json(event)
+                queue_task = asyncio.create_task(queue.get())
     except WebSocketDisconnect:
         pass
-    except (market_data.MarketDataError, upstox_service.UpstoxServiceError) as exc:
+    except (market_data.MarketDataError, MarketFeedManagerError, upstox_service.UpstoxServiceError) as exc:
+        state = exc.state if isinstance(exc, MarketFeedManagerError) else "unavailable"
+        category = exc.category if isinstance(exc, MarketFeedManagerError) else "configuration_or_provider_error"
         try:
-            await websocket.send_json({"type": "unavailable", "detail": str(exc)})
+            await websocket.send_json({"type": "unavailable", "state": state, "error_category": category, "detail": str(exc)})
             await websocket.close(code=1011)
         except Exception:
             pass
@@ -154,16 +148,16 @@ async def stream_instrument_quote(websocket: WebSocket, instrument_key: str) -> 
         except Exception:
             pass
     finally:
-        for task in (upstream_task, browser_task):
+        for task in (queue_task, browser_task):
             if task is not None and not task.done():
                 task.cancel()
-        if upstream is not None:
+        if queue is not None:
+            cleanup_task = asyncio.create_task(feed_manager.unsubscribe(instrument_key, queue))
             try:
-                await upstream.close()
-            except Exception:
-                pass
-        if acquired:
-            _STREAM_SLOT.release()
+                await asyncio.shield(cleanup_task)
+            except asyncio.CancelledError:
+                await cleanup_task
+                raise
 
 
 @router.get("/status", summary="Check whether the Upstox Analytics Token is configured")

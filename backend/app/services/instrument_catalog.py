@@ -41,6 +41,52 @@ _LAST_SEARCH_SOURCE = "Upstox instrument search"
 _LAST_SEARCH_AT: str | None = None
 
 
+def _persist_catalogue(instruments: list[dict[str, Any]]) -> None:
+    """Persist validated listings when DATABASE_URL is configured; never replace on failure."""
+    try:
+        from app.services import market_store, observation_store
+
+        if observation_store.storage_is_configured():
+            market_store.upsert_instruments(instruments)
+    except Exception as exc:
+        logger.warning("Could not persist Upstox instrument catalogue (%s)", type(exc).__name__)
+
+
+def _start_catalogue_sync() -> int | None:
+    try:
+        from app.services import market_store, observation_store
+
+        if observation_store.storage_is_configured():
+            return market_store.create_catalogue_sync_run()
+    except Exception as exc:
+        logger.warning("Could not start instrument catalogue sync (%s)", type(exc).__name__)
+    return None
+
+
+def _finish_catalogue_sync(run_id: int | None, instruments: list[dict[str, Any]], error: str | None = None) -> None:
+    if run_id is None:
+        return
+    try:
+        from app.services import market_store
+
+        counts = market_store.upsert_instruments(instruments) if error is None else {"inserted_count": 0, "updated_count": 0}
+        market_store.finish_catalogue_sync(
+            run_id, fetched_count=len(instruments),
+            inserted_count=counts["inserted_count"], updated_count=counts["updated_count"],
+            error_category=error,
+        )
+    except Exception as exc:
+        try:
+            from app.services import market_store
+
+            market_store.finish_catalogue_sync(
+                run_id, fetched_count=len(instruments), error_category="database_write_failed",
+            )
+        except Exception:
+            pass
+        logger.warning("Could not finish instrument catalogue sync (%s)", type(exc).__name__)
+
+
 def _fetch_json(url: str, *, token: str = "") -> tuple[int, Any]:
     global _SEARCH_API_BLOCKED
     headers = {"Accept": "application/json", "User-Agent": "Arthvest/0.3 market discovery"}
@@ -127,26 +173,32 @@ def _fetch_master() -> tuple[str, list[dict[str, Any]]]:
     with _MASTER_LOCK:
         if _MASTER_CACHE and _MASTER_CACHE[0] > now:
             return _MASTER_CACHE[1], _MASTER_CACHE[2]
-    try:
-        request = Request(MASTER_URL, headers={"Accept": "application/gzip", "User-Agent": "Arthvest/0.3 market discovery"})
-        with urlopen(request, timeout=20) as response:
-            raw = response.read()
-    except (HTTPError, TimeoutError, URLError, OSError) as exc:
-        logger.warning("Upstox instrument master download failed (%s)", type(exc).__name__)
-        raise MarketDataError("Upstox's instrument master is unavailable; no catalogue results can be provided.", 503) from exc
-    try:
-        data = json.loads(gzip.decompress(raw).decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise MarketDataError("Upstox's instrument master could not be validated.", 502) from exc
-    if not isinstance(data, list):
-        raise MarketDataError("Upstox's instrument master has an unexpected format.", 502)
-    updated_at = datetime.now(timezone.utc).isoformat()
-    instruments = [item for row in data if (item := _normalize_instrument(row, "Upstox instrument master", updated_at))]
-    if not instruments:
-        raise MarketDataError("Upstox's instrument master contains no supported NSE/BSE equities.", 502)
-    with _MASTER_LOCK:
+        # Keep the lock through the bounded refresh so concurrent first searches share one download.
+        sync_run_id = _start_catalogue_sync()
+        try:
+            request = Request(MASTER_URL, headers={"Accept": "application/gzip", "User-Agent": "Arthvest/0.3 market discovery"})
+            with urlopen(request, timeout=20) as response:
+                raw = response.read()
+        except (HTTPError, TimeoutError, URLError, OSError) as exc:
+            _finish_catalogue_sync(sync_run_id, [], "upstream_unavailable")
+            logger.warning("Upstox instrument master download failed (%s)", type(exc).__name__)
+            raise MarketDataError("Upstox's instrument master is unavailable; no catalogue results can be provided.", 503) from exc
+        try:
+            data = json.loads(gzip.decompress(raw).decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            _finish_catalogue_sync(sync_run_id, [], "upstream_invalid_response")
+            raise MarketDataError("Upstox's instrument master could not be validated.", 502) from exc
+        if not isinstance(data, list):
+            _finish_catalogue_sync(sync_run_id, [], "upstream_invalid_response")
+            raise MarketDataError("Upstox's instrument master has an unexpected format.", 502)
+        updated_at = datetime.now(timezone.utc).isoformat()
+        instruments = [item for row in data if (item := _normalize_instrument(row, "Upstox instrument master", updated_at))]
+        if not instruments:
+            _finish_catalogue_sync(sync_run_id, [], "upstream_invalid_response")
+            raise MarketDataError("Upstox's instrument master contains no supported NSE/BSE equities.", 502)
+        _finish_catalogue_sync(sync_run_id, instruments)
         _MASTER_CACHE = (time.monotonic() + MASTER_CACHE_SECONDS, updated_at, instruments)
-    return updated_at, instruments
+        return updated_at, instruments
 
 
 def _master_search(query: str, exchange: str, page: int, records: int) -> dict[str, Any]:
@@ -172,6 +224,7 @@ def _master_search(query: str, exchange: str, page: int, records: int) -> dict[s
         else:
             rank = 4
         return rank, symbol, instrument["instrument_key"]
+    filtered = _dedupe_instruments(filtered)
     filtered.sort(key=relevance)
     total = len(filtered)
     start = (page - 1) * records
@@ -183,6 +236,14 @@ def _master_search(query: str, exchange: str, page: int, records: int) -> dict[s
         "source": "Upstox instrument master",
         "catalogue_updated_at": updated_at,
     }
+
+
+def _dedupe_instruments(instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse duplicate provider rows while preserving distinct exchange listings."""
+    unique: dict[str, dict[str, Any]] = {}
+    for instrument in instruments:
+        unique.setdefault(str(instrument["instrument_key"]), instrument)
+    return list(unique.values())
 
 
 def search_instruments(query: str, exchange: str = "ALL", page: int = 1, records: int = 20) -> dict[str, Any]:
@@ -217,6 +278,7 @@ def search_instruments(query: str, exchange: str = "ALL", page: int = 1, records
                 if (item := _normalize_instrument(row, "Upstox instrument search", None))
                 and (exchange == "ALL" or item["exchange"] == exchange)
             ]
+            instruments = _dedupe_instruments(instruments)
             result = {
                 "query": query,
                 "exchange": exchange,
@@ -234,7 +296,29 @@ def search_instruments(query: str, exchange: str = "ALL", page: int = 1, records
             if exc.status_code == 422:
                 raise
             logger.warning("Upstox instrument search failed (%s); trying official instrument master", exc.status_code)
-            result = _master_search(query, exchange, page, records)
+            try:
+                result = _master_search(query, exchange, page, records)
+            except MarketDataError as master_error:
+                if master_error.status_code == 422:
+                    raise
+                try:
+                    from app.services import market_store
+
+                    instruments = market_store.search_instruments(query, exchange, records * page)
+                except Exception:
+                    raise master_error from None
+                if not instruments:
+                    raise master_error from None
+                start = (page - 1) * records
+                result = {
+                    "query": query, "exchange": exchange,
+                    "instruments": instruments[start : start + records],
+                    "page": {"page_number": page, "total_pages": (len(instruments) + records - 1) // records,
+                             "records": records, "total_records": len(instruments)},
+                    "source": "Arthvest persistent Upstox catalogue",
+                    "catalogue_updated_at": max((row.get("catalogue_updated_at") or "" for row in instruments), default="") or None,
+                }
+    _persist_catalogue(result["instruments"])
     with _SEARCH_LOCK:
         _SEARCH_CACHE[cache_key] = (time.monotonic() + SEARCH_CACHE_SECONDS, result)
         _LAST_SEARCH_AT = datetime.now(timezone.utc).isoformat()
@@ -249,7 +333,19 @@ def get_instrument(instrument_key: str) -> dict[str, Any]:
     if instrument:
         return instrument
     # A persisted watchlist may be loaded after process restart; resolve its key from the provider's real master.
-    _, instruments = _fetch_master()
+    try:
+        _, instruments = _fetch_master()
+    except MarketDataError as upstream_error:
+        try:
+            from app.services import market_store
+
+            stored = market_store.get_instrument(instrument_key)
+        except Exception:
+            stored = None
+        if stored is not None:
+            _INSTRUMENTS_BY_KEY[instrument_key] = stored
+            return stored
+        raise upstream_error from None
     instrument = next((item for item in instruments if item["instrument_key"] == instrument_key), None)
     if not instrument:
         raise MarketDataError("Instrument key is not present in Upstox's current NSE/BSE equity catalogue.", 404)

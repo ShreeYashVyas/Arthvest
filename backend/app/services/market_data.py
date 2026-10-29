@@ -115,8 +115,19 @@ def get_market_data_status() -> dict[str, object]:
         "provider": provider_name,
         "configured": configured,
         "stream_configured": (
-            bool(upstox_service._market_feed_access_token()) if provider == "upstox" else False
+            bool(upstox_service._market_feed_token()) if provider == "upstox" else False
         ),
+        "connection_state": "disconnected",
+        "last_authorized_at": None,
+        "last_connected_at": None,
+        "last_message_received_at": None,
+        "last_tick_received_at": None,
+        "last_source_timestamp": None,
+        "upstream_message_count": 0,
+        "subscribed_instrument_count": 0,
+        "reconnect_attempts": 0,
+        "stream_error_category": None,
+        "stream_failure_reason": None,
         "note": note,
         "cache_seconds": _cache_seconds(),
         "auto_refresh_seconds": 60,
@@ -341,6 +352,8 @@ _PROVIDERS: dict[str, MarketProvider] = {
 _CACHE: dict[tuple[str, tuple[str, ...]], tuple[float, dict[str, object]]] = {}
 _CACHE_LOCK = threading.Lock()
 _IN_FLIGHT: dict[tuple[str, tuple[str, ...]], Future[dict[str, object]]] = {}
+_HISTORY_LOCK = threading.Lock()
+_HISTORY_IN_FLIGHT: dict[tuple[str, str, int, date, date], Future[dict[str, object]]] = {}
 
 
 def _requested_instruments(symbols: list[str] | None) -> list[dict[str, str]]:
@@ -482,6 +495,7 @@ def get_instrument_quote(instrument_key: str) -> dict[str, object]:
             "volume": _finite_number(row.get("volume")),
             "currency": row.get("currency") if isinstance(row.get("currency"), str) else None,
             "source": "Upstox",
+            "delivery": "rest",
             "source_timestamp": source_timestamp,
             "fetched_at": fetched_at,
             "freshness": _freshness(source_timestamp, "Upstox"),
@@ -522,8 +536,9 @@ def get_instrument_history(
     from_date: date,
     to_date: date,
 ) -> dict[str, object]:
-    """Fetch and normalize real Upstox V3 historical candles."""
+    """Return persistent provider history, synchronizing only uncovered ranges."""
     from app.services import instrument_catalog
+    from app.services import market_store
 
     instrument = instrument_catalog.get_instrument(instrument_key)
     if unit not in {"minutes", "hours", "days", "weeks", "months"}:
@@ -536,6 +551,38 @@ def get_instrument_history(
     max_days = 31 if unit == "minutes" and interval <= 15 else 92 if unit in {"minutes", "hours"} else 3650
     if (to_date - from_date).days > max_days:
         raise MarketDataError(f"The requested range exceeds the {max_days}-day limit for this candle unit.", 422)
+    cache_key = (instrument_key, unit, interval, from_date, to_date)
+    with _HISTORY_LOCK:
+        future = _HISTORY_IN_FLIGHT.get(cache_key)
+        owner = future is None
+        if owner:
+            future = Future()
+            _HISTORY_IN_FLIGHT[cache_key] = future
+    assert future is not None
+    if not owner:
+        try:
+            return copy.deepcopy(future.result(timeout=40))
+        except FutureTimeout as exc:
+            raise MarketDataError("A history synchronization for this range is still in progress.", 503) from exc
+
+    try:
+        result = _synchronize_instrument_history(
+            market_store, instrument, unit, interval, from_date, to_date
+        )
+        future.set_result(copy.deepcopy(result))
+        return result
+    except Exception as exc:
+        future.set_exception(exc)
+        raise
+    finally:
+        with _HISTORY_LOCK:
+            if _HISTORY_IN_FLIGHT.get(cache_key) is future:
+                _HISTORY_IN_FLIGHT.pop(cache_key, None)
+
+
+def _fetch_upstox_candles(
+    instrument_key: str, unit: str, interval: int, from_date: date, to_date: date
+) -> tuple[list[dict[str, object]], str]:
     try:
         payload = upstox_service.get_historical_candles(
             instrument_key, unit, interval, to_date.isoformat(), from_date.isoformat()
@@ -543,32 +590,182 @@ def get_instrument_history(
     except upstox_service.UpstoxServiceError as exc:
         raise MarketDataError(str(exc), exc.status_code) from exc
     raw = payload["data"]["candles"]
+    fetched_at = datetime.now(timezone.utc).isoformat()
     candles: list[dict[str, object]] = []
     for candle in raw:
         if not isinstance(candle, list) or len(candle) < 6:
             raise MarketDataError("Upstox returned a malformed candle record.", 502)
         timestamp = _timestamp(candle[0])
         values = [_finite_number(value) for value in candle[1:6]]
+        open_value, high_value, low_value, close_value, volume = values
         if timestamp is None or any(value is None for value in values):
             raise MarketDataError("Upstox returned an invalid candle value.", 502)
+        if any(value <= 0 for value in values[:4]):
+            raise MarketDataError("Upstox returned a non-positive equity price.", 502)
+        if high_value < max(open_value, close_value, low_value) or low_value > min(open_value, close_value) or volume < 0:
+            raise MarketDataError("Upstox returned inconsistent candle values.", 502)
+        open_interest = _finite_number(candle[6]) if len(candle) > 6 else None
+        if len(candle) > 6 and (open_interest is None or open_interest < 0):
+            raise MarketDataError("Upstox returned an invalid open-interest value.", 502)
         candles.append({
-            "timestamp": timestamp,
-            "open": values[0],
-            "high": values[1],
-            "low": values[2],
-            "close": values[3],
-            "volume": values[4],
+            "timestamp": timestamp, "open": open_value, "high": high_value,
+            "low": low_value, "close": close_value, "volume": volume,
+            "open_interest": open_interest, "source": "Upstox historical",
+            "fetched_at": fetched_at, "quality_status": "provider_validated",
         })
     candles.sort(key=lambda item: str(item["timestamp"]))
+    return candles, fetched_at
+
+
+def _missing_history_ranges(
+    start: date, end: date, coverage: list[tuple[date, date]]
+) -> list[tuple[date, date]]:
+    from datetime import timedelta
+
+    merged: list[list[date]] = []
+    for left, right in sorted(coverage):
+        if right < start or left > end:
+            continue
+        left, right = max(left, start), min(right, end)
+        if merged and left <= merged[-1][1] + timedelta(days=1):
+            merged[-1][1] = max(merged[-1][1], right)
+        else:
+            merged.append([left, right])
+    gaps: list[tuple[date, date]] = []
+    cursor = start
+    for left, right in merged:
+        if left > cursor:
+            gaps.append((cursor, left - timedelta(days=1)))
+        cursor = max(cursor, right + timedelta(days=1))
+    if cursor <= end:
+        gaps.append((cursor, end))
+    return gaps
+
+
+def _synchronize_instrument_history(
+    store: Any, instrument: dict[str, Any], unit: str, interval: int,
+    from_date: date, to_date: date,
+) -> dict[str, object]:
+    key = str(instrument["instrument_key"])
+    fetched_this_request: list[dict[str, object]] = []
+    inserted = updated = 0
+    persistence_status = "available"
+    error_category: str | None = None
+    try:
+        stored = store.list_candles(key, unit, interval, from_date, to_date)
+        gaps = _missing_history_ranges(from_date, to_date, store.successful_coverage(key, unit, interval))
+    except store.MarketStorageDisabledError:
+        stored = []
+        gaps = [(from_date, to_date)]
+        persistence_status = "configuration_missing"
+        error_category = "database_configuration_missing"
+    except Exception:
+        stored = []
+        gaps = [(from_date, to_date)]
+        persistence_status = "unavailable"
+        error_category = "database_read_failed"
+
+    if len(gaps) > 8:
+        raise MarketDataError("Stored history has too many uncovered segments; request smaller ranges.", 422)
+
+    for gap_start, gap_end in gaps:
+        sync_id: int | None = None
+        if persistence_status == "available":
+            try:
+                sync_id = store.create_sync_run(
+                    instrument_key=key, unit=unit, interval=interval,
+                    from_date=gap_start, to_date=gap_end,
+                )
+            except Exception:
+                persistence_status = "write_failed"
+                error_category = "database_write_failed"
+        try:
+            candles, _fetched_at = _fetch_upstox_candles(key, unit, interval, gap_start, gap_end)
+        except MarketDataError as exc:
+            category = "upstream_timeout" if exc.status_code == 504 else "upstream_unavailable" if exc.status_code == 503 else "upstream_invalid_response"
+            if sync_id is not None:
+                try:
+                    store.finish_sync_failure(sync_id, category)
+                except Exception:
+                    pass
+            error_category = category
+            if not stored and not fetched_this_request:
+                raise
+            break
+        fetched_this_request.extend(candles)
+        if sync_id is not None:
+            try:
+                counts = store.finish_sync_success(sync_id, instrument, unit, interval, candles)
+                inserted += counts["inserted_count"]
+                updated += counts["updated_count"]
+            except Exception:
+                persistence_status = "write_failed"
+                error_category = "database_write_failed"
+                try:
+                    store.finish_sync_failure(sync_id, "database_write_failed")
+                except Exception:
+                    pass
+
+    if persistence_status == "available":
+        try:
+            stored = store.list_candles(key, unit, interval, from_date, to_date)
+            coverage = store.successful_coverage(key, unit, interval)
+            gaps = _missing_history_ranges(from_date, to_date, coverage)
+        except Exception:
+            persistence_status = "read_failed"
+            error_category = "database_read_failed"
+    if persistence_status != "available":
+        by_timestamp = {str(item["timestamp"]): item for item in stored}
+        by_timestamp.update({str(item["timestamp"]): item for item in fetched_this_request})
+        candles_for_response = sorted(by_timestamp.values(), key=lambda row: str(row["timestamp"]))
+    else:
+        candles_for_response = stored
+
+    if persistence_status == "available":
+        try:
+            history = store.history_status(key, unit, interval)
+        except Exception:
+            history = {
+                "last_successful_sync_at": None, "last_attempted_sync_at": None,
+                "last_failure_category": "database_status_unavailable", "last_run_status": "unavailable",
+            }
+    else:
+        history = {
+            "last_successful_sync_at": None, "last_attempted_sync_at": None,
+            "last_failure_category": error_category, "last_run_status": "failed",
+        }
+    start_stamp = candles_for_response[0]["timestamp"] if candles_for_response else None
+    end_stamp = candles_for_response[-1]["timestamp"] if candles_for_response else None
+    upstream_complete = bool(fetched_this_request) and error_category not in {
+        "upstream_timeout", "upstream_unavailable", "upstream_invalid_response",
+    }
+    complete = not gaps if persistence_status == "available" else upstream_complete
+    if persistence_status == "available":
+        status = "synchronized" if complete else "stale" if error_category and candles_for_response else "partially_synchronized" if candles_for_response else "initial_sync_pending"
+    else:
+        status = "synchronization_failed"
+    fetched_times = [item.get("fetched_at") for item in candles_for_response if isinstance(item.get("fetched_at"), str)]
+    from app.services.technical_analysis import calculate_technical_indicators
+
     return {
-        "instrument_key": instrument_key,
-        "symbol": instrument["trading_symbol"],
-        "exchange": instrument["exchange"],
-        "provider": "Upstox",
-        "unit": unit,
-        "interval": interval,
-        "from_date": from_date.isoformat(),
-        "to_date": to_date.isoformat(),
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
-        "candles": candles,
+        "instrument_key": key, "symbol": instrument["trading_symbol"],
+        "exchange": instrument["exchange"], "provider": "Upstox",
+        "unit": unit, "interval": interval,
+        "from_date": from_date.isoformat(), "to_date": to_date.isoformat(),
+        "fetched_at": max(fetched_times) if fetched_times else datetime.now(timezone.utc).isoformat(),
+        "candles": candles_for_response,
+        "technical_indicators": calculate_technical_indicators(candles_for_response),
+        "history_source": "database" if persistence_status == "available" else "Upstox Historical API (not persisted)",
+        "persistence_status": persistence_status,
+        "sync_status": status,
+        "coverage_complete": complete,
+        "coverage_start": str(start_stamp) if start_stamp else None,
+        "coverage_end": str(end_stamp) if end_stamp else None,
+        "candle_count": len(candles_for_response),
+        "inserted_count": inserted,
+        "updated_count": updated,
+        "last_successful_sync_at": history["last_successful_sync_at"],
+        "last_attempted_sync_at": history["last_attempted_sync_at"],
+        "last_failure_category": error_category or history["last_failure_category"],
+        "last_run_status": history["last_run_status"],
     }

@@ -89,6 +89,30 @@ def test_upstox_quotes_normalise_index_snapshot(monkeypatch) -> None:
     assert by_key["india-vix"]["last_price"] is None
 
 
+def test_upstox_quote_prefers_last_trade_time_over_snapshot_update_time(monkeypatch) -> None:
+    monkeypatch.setattr(upstox_service, "_analytics_token", lambda: "test-token")
+    trade_time_ms = "1793268000000"
+    payload = {
+        "status": "success",
+        "data": {
+            "NSE_INDEX:Nifty 50": {
+                "instrument_token": "NSE_INDEX|Nifty 50",
+                "last_price": 23000.0,
+                "net_change": 0.0,
+                "ohlc": {"open": 23000.0, "high": 23000.0, "low": 23000.0, "close": 23000.0},
+                "timestamp": "2026-10-29T23:30:00+05:30",
+                "last_trade_time": trade_time_ms,
+            }
+        },
+    }
+    monkeypatch.setattr(upstox_service, "_request_quotes_payload", lambda token: payload)
+
+    result = upstox_service.get_market_quotes()
+    quote = result["quotes"][0]
+
+    assert quote["timestamp"] == "2026-10-29T10:00:00+00:00"
+
+
 def test_upstox_quotes_do_not_echo_provider_credentials(monkeypatch) -> None:
     token = "another-example-private-token"
     monkeypatch.setenv("UPSTOX_ANALYTICS_TOKEN", token)
